@@ -18,7 +18,7 @@ nonisolated enum AppBrand {
     ?? "kimo-tools"
   static let repository =
     Bundle.main.object(forInfoDictionaryKey: "KittyUpdateRepository") as? String
-    ?? "kimo-si/kitty-tools"
+    ?? "kimo-si/kimo-tools"
 }
 
 @main

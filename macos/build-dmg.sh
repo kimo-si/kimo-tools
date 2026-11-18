@@ -7,8 +7,8 @@
 #   所以 latest 必须一直是 mac 版（Windows 版、表情包这些 release 一律 --latest=false），清单必须传上去。清单里是版本号、zip 的下载地址
 #   （按 GitHub 上传后的名字：空格换成「.」）、sha256、大小、发布页；**格式发布后别改**（已装的版本会读它，见
 #   Updater.release(fromManifest:)：只加新键，要改已有键的意思就换文件名、旧名字的照发）。传完核一遍（两条都要 200）：
-#     curl -fsSL https://github.com/kimo-si/kitty-tools/releases/latest/download/macos-update.json
-#     curl -fsIL "$(curl -fsSL https://github.com/kimo-si/kitty-tools/releases/latest/download/macos-update.json | jq -r .url)"
+#     curl -fsSL https://github.com/kimo-si/kimo-tools/releases/latest/download/macos-update.json
+#     curl -fsIL "$(curl -fsSL https://github.com/kimo-si/kimo-tools/releases/latest/download/macos-update.json | jq -r .url)"
 #   发布说明固定附「系统设置 › 隐私与安全 › 仍要打开」步骤（只有第一次安装要；之后 App 内更新下载的包不带隔离标记，不用再放行）。
 # 产物名跟 PRODUCT_NAME 走（kimo-tools.app、卷名 kimo-tools、kimo-tools_<版本>_arm64.dmg）。
 #   从 Kitty Tools 升上来时先退出旧版并移走旧应用包。同一 Bundle ID 可继续使用原来的本机数据，

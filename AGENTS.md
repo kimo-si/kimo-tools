@@ -255,7 +255,7 @@ defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 - 刻意的简化写 `ponytail:` 注释，写明上限和升级路径。
 - commit 格式 `<type>: <description>`，type 取 feat / fix / ui / refactor / docs / perf / build / chore。**标题一行、70 字以内，空一行再写正文**：为什么改、改了什么、怎么验的都写进正文（会话开头会自动带上最近几条提交的标题，写长了每个会话都白读一遍）。旧提交不改。
 - **更新日志（必遵）**：改 `MARKETING_VERSION` 必须在 `macos/KittyTools/Resources/changelog.json` 追加该版本条目，`type` 只允许 feat / fix / perf / ui（refactor / build / chore 不进用户日志）；缺条目时 `build-dmg.sh` 直接中止。
-- 发布：`APP_UPDATE_REPOSITORY` 配置的二开仓库（当前为 github.com/kimo-si/kitty-tools），tag `macos-v*`，正式 release、标 latest，附 DMG、`_arm64.zip` 和更新清单 `macos-update.json`（App 内更新先读 latest 上的清单、读不到再走 API，mac-native §7）；不公证，发布说明固定附「系统设置 › 隐私与安全 › 仍要打开」步骤（只有第一次安装要，之后 App 内更新）。
+- 发布：`APP_UPDATE_REPOSITORY` 配置的二开仓库（当前为 github.com/kimo-si/kimo-tools），tag `macos-v*`，正式 release、标 latest，附 DMG、`_arm64.zip` 和更新清单 `macos-update.json`（App 内更新先读 latest 上的清单、读不到再走 API，mac-native §7）；不公证，发布说明固定附「系统设置 › 隐私与安全 › 仍要打开」步骤（只有第一次安装要，之后 App 内更新）。
 
 ## 给 agent 的工具
 

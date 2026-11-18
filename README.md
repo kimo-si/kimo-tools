@@ -219,7 +219,7 @@ kimo-tools 使用 Swift 6、SwiftUI 和 AppKit。点击菜单栏图标打开主�
 
 ## 安装
 
-1. 在 [kimo-tools 发布页](https://github.com/kimo-si/kitty-tools/releases) 查找 `kimo-tools_x.y.z_arm64.dmg`，也可按下文从源码打包。
+1. 在 [kimo-tools 发布页](https://github.com/kimo-si/kimo-tools/releases) 查找 `kimo-tools_x.y.z_arm64.dmg`，也可按下文从源码打包。
 2. 把 `kimo-tools.app` 拖进「应用程序」。从原生 Kitty Tools 升级时，先退出并移走旧应用包，避免两个同标识的应用同时安装。新版在同一 macOS 用户下会读取原来的本机配置与数据。
 3. 本机打包使用 Apple Development 签名。首次打开如果被系统拦下，在「系统设置 › 隐私与安全」选择「仍要打开」。
 4. 按首次启动的欢迎引导授权：
@@ -244,7 +244,7 @@ DMG 可以单独分享。要把设置交给另一台 Mac，在「设置 › 通�
 先在 Xcode 的「设置 › 账户」登录自己的 Apple 账户，准备一张带私钥的 Apple Development 证书，并记下该证书所属的 10 位 Team ID。可以在「管理证书」中创建开发证书。[Apple 的签名证书说明](https://developer.apple.com/documentation/xcode/sharing-your-teams-signing-certificates)
 
 ```bash
-git clone --branch macos --single-branch https://github.com/kimo-si/kitty-tools.git kimo-tools
+git clone --branch macos --single-branch https://github.com/kimo-si/kimo-tools.git kimo-tools
 cd kimo-tools
 
 # 把下方的 TEAM_ID 值换成你自己的团队 ID。
