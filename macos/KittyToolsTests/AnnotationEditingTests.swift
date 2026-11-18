@@ -613,7 +613,7 @@ struct AnnotationEditingTests {
     context.fill(CGRect(x: 0, y: 0, width: 1200, height: 400))
     context.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
     context.fill(CGRect(x: 0, y: 400, width: 1200, height: 400))
-    let h = Harness(image: try #require(context.makeImage()))
+    let h = Harness(image: try #require(context.makeImage()), magnifierEnabled: false)
     h.makeSelection()
     h.view.tool = .rectangle
     let styleBar = try #require(h.view.subviews.lazy.compactMap { $0 as? StyleBar }.first)

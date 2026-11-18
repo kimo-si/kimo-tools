@@ -47,6 +47,27 @@ struct ClipboardPanelTests {
     try #require(model.store.items.first { $0.text == text })
   }
 
+  /// 列表仅展示最新 500 条，搜索与分组筛选仍能找出列表以外的条目。
+  @Test func capsVisibleHistoryAfterSearchingAndFiltering() throws {
+    let oldText = "唯一的旧条目"
+    let texts = (0..<520).map { "历史测试 \($0)" } + [oldText]
+    let (model, store) = try makeModel(texts)
+    #expect(model.visibleItems.compactMap(\.text) == Array(texts.prefix(500)))
+
+    model.query = "历史测试"
+    #expect(model.visibleItems.compactMap(\.text) == Array(texts.prefix(500)))
+    model.query = oldText
+    #expect(model.visibleItems.compactMap(\.text) == [oldText])
+
+    // 给超出显示上限的条目归组，验证分组筛选在截断之前生效。
+    let group = try #require(store.createGroup(named: "收藏"))
+    store.assign([try item(model, oldText).id], to: group.id)
+    model.query = ""
+    model.selectGroup(.group(group.id))
+    #expect(model.visibleItems.compactMap(\.text) == [oldText])
+    #expect(store.items.count == texts.count)
+  }
+
   /// JSON 默认美化（体检 A10）：换条目不复位，一次呼出里点过「原文」就一直看原文，收起面板（reset）才回到美化；
   /// 美化结果按条目缓存，编辑正文后清掉
   @Test func jsonPrettyByDefault() throws {

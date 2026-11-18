@@ -38,7 +38,8 @@ struct SelectionInteractionTests {
       mode: SelectionView.Mode = .capture, windows: [CGRect] = [], owners: [[pid_t]] = [],
       findsElements: Bool = false, image: CGImage? = nil, hint: String = "",
       session: SelectionSession? = nil,
-      origin: CGPoint = CGPoint(x: -20000, y: -20000), keepsColors: Bool = false
+      origin: CGPoint = CGPoint(x: -20000, y: -20000), keepsColors: Bool = false,
+      magnifierEnabled: Bool = true, snapGuidesEnabled: Bool = true
     ) {
       let size = CGSize(width: 1200, height: 800)
       let context = CGContext(
@@ -51,7 +52,8 @@ struct SelectionInteractionTests {
       if findsElements { self.session.findsElements = true }
       view = SelectionView(
         image: image ?? context.makeImage()!, windows: windows, owners: owners,
-        session: self.session, keepsColors: keepsColors)
+        session: self.session, keepsColors: keepsColors, magnifierEnabled: magnifierEnabled,
+        snapGuidesEnabled: snapGuidesEnabled)
       styles = UserDefaults(suiteName: styleSuite)!
       view.styleDefaults = styles
       window = KeyWindow(
@@ -732,6 +734,17 @@ struct SelectionInteractionTests {
     #expect(free.view.selection == CGRect(x: 150, y: 150, width: 554, height: 300))
   }
 
+  // 单独关闭横竖参考线后，两条边照样吸附，光标旁的放大镜也照常显示。
+  @Test func hiddenGuidesStillSnapBothAxes() {
+    #expect(Prefs.defaults[Prefs.screenshotShowsSnapGuides] as? Bool == true)
+    let h = Harness(
+      windows: [CGRect(x: 100, y: 100, width: 600, height: 400)], snapGuidesEnabled: false)
+    h.begin(CGPoint(x: 150, y: 150), to: CGPoint(x: 704, y: 504))
+    #expect(h.view.selection == CGRect(x: 150, y: 150, width: 550, height: 350))
+    #expect(h.view.guides.x == nil && h.view.guides.y == nil)
+    #expect(h.view.showsMagnifier)
+  }
+
   // ⌘ + 方向键推外、⌥ + 方向键收里（↑ 是上边），⇧ 10 点；普通方向键仍是平移
   @Test func commandAndOptionArrowsPushAndPullEdges() {
     let h = Harness()
@@ -1119,6 +1132,23 @@ struct SelectionInteractionTests {
     #expect(h.view.annotations.count == 1)
     let outcome = await h.outcome { h.key(kVK_Escape, "\u{1b}") }
     #expect(outcome == nil)
+  }
+
+  // 隐藏放大镜后，移动和拖选都不显示浮层；C 仍取当前像素。
+  @Test func hiddenMagnifierStillCopiesColor() async {
+    #expect(Prefs.defaults[Prefs.screenshotShowsMagnifier] as? Bool == true)
+    let h = Harness(magnifierEnabled: false)
+    let point = CGPoint(x: 300, y: 300)
+    h.move(point)
+    #expect(!h.view.showsMagnifier)
+    h.begin(point, to: CGPoint(x: 500, y: 400))
+    #expect(!h.view.showsMagnifier)
+    let outcome = await h.outcome { h.key(kVK_ANSI_C, "c") }
+    guard case .color(let hex)? = outcome else {
+      Issue.record("隐藏放大镜后没有交回色值")
+      return
+    }
+    #expect(hex.hasPrefix("#") && hex.count == 7)
   }
 
   // 截图翻译 / 识字：待选和框选时有放大镜、尺寸只读，⇧ 照样正方形，松手即确认（交回裁好的图）

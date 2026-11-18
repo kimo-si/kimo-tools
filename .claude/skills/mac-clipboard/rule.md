@@ -40,6 +40,7 @@
 - 敏感文本：`sk-` / `bearer ` 后的 token 要求词边界 + 字符集 + 长度 + 含数字（`sk-proj-…` 也拦，普通单词跟在 bearer 后不拦），卡号整段 13–19 位且过 Luhn；固定前缀 + 长度的常见密钥（GitHub `ghp_` / `github_pat_`、AWS `AKIA`、Slack `xox?-`、Google `AIza`、私钥块、JWT，前面要求 Unicode 词边界，先用前缀字符串粗筛再跑正则，体检 B5；第四轮体检 E24③ 补 Stripe `sk_live_` / `sk_test_` / `rk_live_` / `rk_test_` + 24 位起、GitLab `glpat-` + 20 位起、npm `npm_` + 36 位起、Hugging Face `hf_` + 34 位起，`npm_config_cache` 这类变量名不拦）。
 
 ## 3. 搜索
+- 面板只显示筛选结果中最新的 500 条。关键词搜索和分组、内容筛选都使用完整的剪贴板历史，存储保留规则见 §1。
 - `Search.filter`：空白分词 AND，大小写 / 全半角 / 变音符号不敏感；搜备注、正文、图片文字、路径、来源。**只过滤、不排序**（体检 A6）：结果保持复制时间新→旧，照样按天分组（标题后的数字是命中条数）。
 - 图片识别文字只用来搜索：透镜、行标题平时不显示（用户 2026-09-27 嫌干扰），有搜索词且靠它命中时行标题接命中那段；全文只在 ⌘Y 大卡里；⌘K / 右键「复制图中文字」（`copyRecognizedText`，写剪贴板并记一条文本进历史）。
 - 必须走 `ClipboardStore.search`（折叠后 UTF-8 字节缓存 + `memmem`）：直接 `range(of:options:)` 5000 条要 1 秒，缓存后 9ms（Debug）。改条目正文、备注、OCR、来源的地方都要清对应的 `searchKeys`。

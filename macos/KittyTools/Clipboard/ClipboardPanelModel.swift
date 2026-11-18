@@ -15,6 +15,8 @@ import Carbon.HIToolbox
 import Observation
 
 @Observable final class ClipboardPanelModel {
+  private static let visibleItemLimit = 500
+
   enum Scope: String, CaseIterable {
     case all, favorites, snippets
 
@@ -209,7 +211,7 @@ import Observation
   /// ⌘C 复制的条目：面板开着时列表不动，收起（reset）时再挪到最前 / 记新历史（体检 A8）。
   /// changeCount 是写完那一刻的：收起时剪贴板已被别的内容换掉（复制图中文字、色值块、固定着去别处复制）就不挪
   @ObservationIgnored private var pendingCopy: (entry: Payload.Entry?, changeCount: Int)?
-  /// 形态识别的结果（按「形态」筛选时整个历史都要问一遍：收起面板不清，只裁掉删了的；连正文一起记，同 linkCache）
+  /// 形态识别结果按需缓存：收起面板时裁掉已删除的条目，连正文一起记，同 linkCache。
   @ObservationIgnored private var formCache: [UUID: (text: String, form: ContentForm?)] = [:]
   #if DEBUG
     /// 单测用：形态、链接两张缓存里各有几条（删掉的条目收起面板后不许留在里面）
@@ -222,26 +224,31 @@ import Observation
 
   // MARK: 列表
 
+  /// 搜索完整历史并应用筛选，面板只取最新的 500 条结果。
   var visibleItems: [ClipItem] {
     let found = store.search(query)
-    // 范围是「全部」、没有筛选时就是搜索结果，不再逐条判断（每次按键要取好几次，800 条一次约 1 ms）
+    // 没有筛选时直接取前缀，条数较少时沿用搜索结果的存储。
     guard
       scope != .all || kind != nil || form != nil || sourceBundleID != nil || groupFilter != .all
-    else { return found }
-    return found.filter { item in
-      switch scope {
-      case .all: break
-      case .favorites: guard item.favorite else { return false }
-      case .snippets: guard item.isSnippet else { return false }
-      }
-      if let kind, item.kind != kind { return false }
-      if let form, contentForm(of: item) != form { return false }
-      if let sourceBundleID, item.sourceBundleID != sourceBundleID { return false }
-      switch groupFilter {
-      case .all: return true
-      case .group(let id): return item.groupID == id
-      }
+    else {
+      return found.count <= Self.visibleItemLimit
+        ? found : Array(found.prefix(Self.visibleItemLimit))
     }
+    return Array(found.lazy.filter(matchesListFilters).prefix(Self.visibleItemLimit))
+  }
+
+  /// 判断条目是否符合当前分组、范围和内容筛选。
+  private func matchesListFilters(_ item: ClipItem) -> Bool {
+    if case .group(let id) = groupFilter, item.groupID != id { return false }
+    switch scope {
+    case .all: break
+    case .favorites: guard item.favorite else { return false }
+    case .snippets: guard item.isSnippet else { return false }
+    }
+    if let kind, item.kind != kind { return false }
+    if let sourceBundleID, item.sourceBundleID != sourceBundleID { return false }
+    if let form, contentForm(of: item) != form { return false }
+    return true
   }
 
   var selectedItem: ClipItem? { selectedItem(in: visibleItems) }

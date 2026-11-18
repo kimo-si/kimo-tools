@@ -752,7 +752,7 @@ struct ClipboardStoreTests {
     let view = try #require(window.contentView)
     settleGroupTransition()
     let top = try expectLens(model, in: window, "ALL 的第一条").row
-    model.select(model.visibleItems[4_400])
+    model.select(try #require(model.visibleItems.last))
     settleGroupTransition()
     try expectLens(model, in: window, "滚动到较早的历史")
 
@@ -835,10 +835,10 @@ struct ClipboardStoreTests {
     let (store, _) = try makeStore()
     for index in (0..<600).reversed() { store.record(text("第 \(index) 条", ago: Double(index) + 1)) }
     let model = ClipboardPanelModel(store: store)
-    model.select(model.visibleItems[550])
+    model.select(model.visibleItems[450])
     let start = CACurrentMediaTime()
     for _ in 0..<5 { _ = model.handleCommand(#selector(NSResponder.moveDown(_:))) }
-    #expect(model.selectedItem?.id == model.visibleItems[555].id)
+    #expect(model.selectedItem?.id == model.visibleItems[455].id)
     #expect(CACurrentMediaTime() - start < 0.15, "5 下 ↓ 用了 \(CACurrentMediaTime() - start) s")
   }
 

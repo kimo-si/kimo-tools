@@ -7,3 +7,6 @@ SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG $(inherited)
 DEBUG_INFORMATION_FORMAT = dwarf
 // 单测要 @testable import
 ENABLE_TESTABILITY = YES
+
+// 换一台 Mac 开发时，可在本机为 Debug 配自己的签名团队；三个主目标共用。
+#include? "Development.xcconfig"

@@ -22,6 +22,8 @@ struct ScreenshotTab: View {
   @AppStorage(Prefs.screenshotToolbarAlign) private var toolbarAlign = "right"
   @AppStorage(Prefs.screenshotCopyAs) private var copyAs = "image"
   @AppStorage(Prefs.screenshotKeepsColors) private var keepsColors = false
+  @AppStorage(Prefs.screenshotShowsSnapGuides) private var showsSnapGuides = true
+  @AppStorage(Prefs.screenshotShowsMagnifier) private var showsMagnifier = true
   @AppStorage(Prefs.screenshotFindsElements) private var findsElements = false
   /// 认元素要辅助功能授权（拍板 D2：没授权只在这里说，不弹框）；从系统设置授权回来、设置窗重新当 key 时刷新
   @State private var trusted = Permissions.isAccessibilityTrusted
@@ -114,6 +116,14 @@ struct ScreenshotTab: View {
           }
           // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
           .onChange(of: keepsColors) { WhatsNew.touch(section: "框选时保持屏幕原色", of: .screenshot) }
+          Toggle(isOn: $showsSnapGuides) {
+            Text("显示吸附参考线")
+            Text("选区对齐窗口或屏幕边缘时显示粉色虚线。关闭后仍会自动对齐")
+          }
+          Toggle(isOn: $showsMagnifier) {
+            Text("框选时显示放大镜")
+            Text("在光标旁放大像素。截图时还会显示十字中心的坐标和色值")
+          }
           Toggle(isOn: $findsElements) {
             Text("悬停时识别窗口里的元素")
             Text("鼠标停在侧栏、列表、按钮这些上面就框出那一块，单击截下；滚轮往上换大一块、往下换小一块，Tab 只认整扇窗口。网页内容、游戏这类认不出来的照旧只认窗口")

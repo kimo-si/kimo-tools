@@ -482,21 +482,15 @@ import SwiftUI
     if isHovered { remaining = .seconds(60) } else { arm(.seconds(60)) }
   }
 
-  /// 慢活的「进行中」岛：work 超过 delay 还没做完才出（很快做完的不闪这一下）。做完之后调用方出结果岛就原地换掉它；
-  /// 没有结果岛的调用方自己收（dismiss(ifShowing:)）
-  func showIfSlow<T>(
-    _ title: String, symbol: String? = nil, after delay: Duration = .milliseconds(300),
-    _ work: () async -> T
-  ) async -> T {
-    await Self.whenSlow(
-      after: delay, notice: { [weak self] in self?.show(title, tone: .progress, symbol: symbol) },
-      work: work)
-  }
-
   /// work 超过 delay 还没做完才调 notice（单测不建岛的窗口，直接测这个）
   static func whenSlow<T>(
     after delay: Duration, notice: @escaping () -> Void, work: () async -> T
   ) async -> T {
+    // 零延迟用于直接显示，同步交给调用方以免和后面的工作争先后。
+    if delay <= .zero {
+      if !Task.isCancelled { notice() }
+      return await work()
+    }
     let pending = Task {
       try? await Task.sleep(for: delay)
       if !Task.isCancelled { notice() }

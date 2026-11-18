@@ -608,6 +608,7 @@ struct SnapshotProbeTests {
     shotPrefs.set(inbox.path, forKey: Prefs.screenshotSaveDirectory)
     shotPrefs.set(Prefs.ShotPlacement.clothesline.rawValue, forKey: Prefs.screenshotPlacement)
     shotPrefs.set("file", forKey: Prefs.screenshotCopyAs)
+    shotPrefs.set(false, forKey: Prefs.screenshotShowsSnapGuides)
     shotPrefs.set(60, forKey: Prefs.screenRecordFrameRate)
     shotPrefs.set(5, forKey: Prefs.screenRecordCountdown)
     shotPrefs.set(false, forKey: Prefs.screenRecordShowsCursor)
@@ -616,7 +617,7 @@ struct SnapshotProbeTests {
     for dark in [false, true] {
       try snapshot(
         ScreenshotTab(shots: nil).defaultAppStorage(shotPrefs).environment(navigation),
-        size: NSSize(width: 640, height: 720),
+        size: NSSize(width: 640, height: 960),
         dark: dark, to: "\(out)/settings-screenshot-custom\(dark ? "-dark" : "").png")
       try snapshot(
         RecordTab().defaultAppStorage(shotPrefs), size: NSSize(width: 640, height: 860),

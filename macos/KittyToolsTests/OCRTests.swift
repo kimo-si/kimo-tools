@@ -9,6 +9,62 @@ import Testing
 
 @MainActor
 struct OCRTests {
+  /// 慢识别结束时收掉顶部进度，浮窗随后展示译文时无需再发结果提示。
+  @Test func completedRecognitionDismissesProgress() async {
+    let island = Island(showing: nil)
+    let progress = OCRProgress(island: island)
+    await progress.run(preparesLocalModel: false, noticeDelay: .zero) {
+      #expect(island.content?.title == "识别中…")
+    }
+    #expect(island.content == nil)
+  }
+
+  /// 上一轮晚返回时新一轮仍能显示进度，取消后也能在底层工作返回前收起。
+  @Test func overlappingRecognitionOwnsProgress() async throws {
+    let island = Island(showing: nil)
+    let progress = OCRProgress(island: island)
+    let older = AsyncStream<Void>.makeStream()
+    let newer = AsyncStream<Void>.makeStream()
+    var firstEntered = false
+    var secondEntered = false
+    defer {
+      older.continuation.finish()
+      newer.continuation.finish()
+    }
+    let first = Task {
+      await progress.run(preparesLocalModel: false, noticeDelay: .zero) {
+        firstEntered = true
+        for await _ in older.stream {}
+      }
+    }
+    try #require(await becomesTrue { firstEntered })
+    let underlyingWork = Task { for await _ in newer.stream {} }
+    let second = Task {
+      await progress.run(preparesLocalModel: false, noticeDelay: .zero) {
+        secondEntered = true
+        await underlyingWork.value
+      }
+    }
+    try #require(await becomesTrue { secondEntered })
+    older.continuation.finish()
+    await first.value
+    #expect(island.content?.title == "识别中…")
+    second.cancel()
+    #expect(await becomesTrue { island.content == nil })
+    newer.continuation.finish()
+    await second.value
+  }
+
+  /// 等待调度顺序上的状态变化，测试失败时仍会释放待结束的任务。
+  private func becomesTrue(_ condition: () -> Bool) async -> Bool {
+    let deadline = ContinuousClock.now + .seconds(3)
+    while !condition() {
+      guard ContinuousClock.now < deadline, !Task.isCancelled else { return false }
+      try? await Task.sleep(for: .milliseconds(10))
+    }
+    return true
+  }
+
   /// 跟随指定服务或列表顺序；关闭的服务、旧的选择不会被偷偷重新启用。
   @Test func screenshotServiceSelection() {
     var apple = OCRService.builtin(.apple)

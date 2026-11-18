@@ -193,25 +193,44 @@ Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程�
 
 ## 从源码构建
 
-需要 Xcode 26.3 及以上和 Apple 芯片的 Mac，没有任何第三方依赖。
+开发环境需要 Xcode 26.3 或更新版本，运行目标为 macOS 15 或更新版本。项目没有第三方依赖，默认编译当前 Mac 的架构。
+
+### 克隆并运行
+
+克隆前，请确认你的 GitHub 账户有权限读取这个仓库。
+
+先在 Xcode 的「设置 › 账户」登录自己的 Apple 账户，准备一张带私钥的 Apple Development 证书，并记下该证书所属的 10 位 Team ID。可以在「管理证书」中创建开发证书。[Apple 的签名证书说明](https://developer.apple.com/documentation/xcode/sharing-your-teams-signing-certificates)
 
 ```bash
-git clone https://github.com/YyAdnBug/kitty-tools.git
+git clone --branch macos --single-branch https://github.com/kimo-si/kitty-tools.git
 cd kitty-tools
-xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools build
+
+# 把下方的 TEAM_ID 值换成你自己的团队 ID。
+TEAM_ID=YOUR_TEAM_ID
+xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  -configuration Debug -destination 'platform=macOS' -derivedDataPath macos/build/dev \
+  DEVELOPMENT_TEAM="$TEAM_ID" build &&
+  open "macos/build/dev/Build/Products/Debug/Kitty Tools Dev.app"
 ```
 
-- **签名**：`macos/Config/Base.xcconfig` 里的 `DEVELOPMENT_TEAM` 改成你自己的 Team ID。
-- **内置智谱密钥（可选）**：新建 `macos/Config/Secrets.xcconfig`（已被 `.gitignore` 忽略，不会提交），写入 `ZHIPU_BUILTIN_KEY = 你的智谱 API Key`。不配置也能正常构建，只是智谱翻译需要在设置里自己填密钥。
-- **打 DMG**：`macos/build-dmg.sh`，产物在 `macos/build/`。
+构建成功后，应用会在菜单栏显示 Kitty Tools 图标。Debug 版使用独立的应用标识，首次运行按引导授权即可。要体验合盖动效，可在「设置 › 通用 › 功能 › 插件」添加。
+
+如果主要用 Xcode 开发，可以把签名团队写入本机的 `macos/Config/Development.xcconfig`。随后打开 `macos/KittyTools.xcodeproj`，选中 `KittyTools` scheme 和 `My Mac`，按 ⌘R 构建并启动。此配置只用于 Debug，Git 会忽略它。
 
 ```bash
-# 单元测试
-xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools test
+printf 'DEVELOPMENT_TEAM = %s\n' "$TEAM_ID" > macos/Config/Development.xcconfig
+open macos/KittyTools.xcodeproj
+```
 
-# 界面截图自检：屏幕外渲染各界面（含深色）为 PNG，本 README 的截图就来自这里
-TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/kitty-shots xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
-  test -only-testing:KittyToolsTests/SnapshotProbeTests
+### 可选配置与测试
+
+- `Secrets.xcconfig` 仅用于打进 App 的智谱翻译密钥。干净检出即可编译、启动和使用本地功能，智谱服务可以在 App 设置里填自己的密钥。
+- 需要本机 DMG 时，用同一团队运行 `LOCAL_SIGNING_TEAM="$TEAM_ID" macos/build-dmg.sh`，产物在 `macos/build/local-<团队 ID>/`。
+
+```bash
+xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  -destination 'platform=macOS' -derivedDataPath macos/build/dev \
+  DEVELOPMENT_TEAM="$TEAM_ID" test
 ```
 
 ## 项目结构
@@ -233,6 +252,7 @@ windows/                 # Windows 原生版（C# + WinUI 3，开发中）
 
 - 便签的交互和数值参考了 [Noty](https://github.com/aimen08/noty)（MIT），代码全部自己重写
 - 状态屏的动画表情来自 [Microsoft Fluent Emoji Animated](https://github.com/microsoft/fluentui-emoji-animated)（MIT）
+- 合盖动效改编自 [Mac Duo](https://github.com/sumimakito/Mac-Duo)（Apache 2.0），[署名与许可](macos/KittyTools/Resources/mac-duo-LICENSE.txt)随应用提供
 
 ## 友情链接
 

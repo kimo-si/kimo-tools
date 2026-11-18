@@ -227,6 +227,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var rebindTipGeneration = 0
   /// 框选时保持屏幕原色（设置 › 截图，Prefs.screenshotKeepsColors）：每次框选新建遮罩时读一次（单测、截图自检直接给）
   private let keepsColors: Bool
+  private let magnifierEnabled: Bool
+  private let snapGuidesEnabled: Bool
 
   /// 遮罩压多暗（纯函数，配单测）：待选整屏 0.18，有洞（选区、悬停的窗口）时洞外 0.45；保持原色时不压
   static func shadeAlpha(hasHole: Bool, keepsColors: Bool) -> CGFloat {
@@ -255,12 +257,16 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   init(
     image: CGImage, windows: [CGRect] = [], owners: [[pid_t]] = [], session: SelectionSession,
-    keepsColors keeps: Bool? = nil
+    keepsColors keeps: Bool? = nil,
+    magnifierEnabled: Bool = UserDefaults.standard.bool(forKey: Prefs.screenshotShowsMagnifier),
+    snapGuidesEnabled: Bool = UserDefaults.standard.bool(forKey: Prefs.screenshotShowsSnapGuides)
   ) {
     self.image = image
     self.windows = windows
     self.owners = owners
     self.session = session
+    self.magnifierEnabled = magnifierEnabled
+    self.snapGuidesEnabled = snapGuidesEnabled
     keepsColors = keeps ?? UserDefaults.standard.bool(forKey: Prefs.screenshotKeepsColors)
     hintParts = Self.hintParts(for: session)
     super.init(frame: .zero)
@@ -1014,9 +1020,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
   }
 
-  /// 十字准线跟放大镜同时出现（待选、拖动框选、拖手柄），只在按住 ⌘ 时；对齐到整点，白线盖住光标所在的那一点
+  /// 十字准线在可取色时按住 ⌘ 出现，独立于放大镜的显示设置；对齐到整点，白线盖住光标所在的那一点
   private func updateCrosshair() {
-    guard let mouse, modifiers.contains(.command), showsMagnifier else {
+    guard let mouse, modifiers.contains(.command), canSampleAtPointer else {
       crossLight.path = nil
       crossDark.path = nil
       return
@@ -1075,16 +1081,14 @@ final class SelectionView: NSView, NSTextViewDelegate {
     return path
   }
 
+  /// 刷新光标旁的像素预览和坐标信息。
   private func updateMagnifier() {
     guard let mouse, showsMagnifier else {
       magnifier.isHidden = true
       magnifierSide = nil
       return
     }
-    let scaleX = CGFloat(image.width) / max(bounds.width, 1)
-    let scaleY = CGFloat(image.height) / max(bounds.height, 1)
-    let x = min(max(Int(mouse.x * scaleX), 0), image.width - 1)
-    let y = min(max(Int((bounds.height - mouse.y) * scaleY), 0), image.height - 1)
+    let (x, y) = imagePixel(at: mouse)
     if sampled?.x != x || sampled?.y != y,
       let sample = Self.sample(image, x: x, y: y, size: Self.loupePixels)
     {
@@ -1113,6 +1117,15 @@ final class SelectionView: NSView, NSTextViewDelegate {
       infoText.string = info
     }
     placeMagnifier()
+  }
+
+  /// 将视图中的光标位置换算到冻结帧的像素坐标，原点在左上。
+  private func imagePixel(at mouse: CGPoint) -> (x: Int, y: Int) {
+    let scaleX = CGFloat(image.width) / max(bounds.width, 1)
+    let scaleY = CGFloat(image.height) / max(bounds.height, 1)
+    let x = min(max(Int(mouse.x * scaleX), 0), image.width - 1)
+    let y = min(max(Int((bounds.height - mouse.y) * scaleY), 0), image.height - 1)
+    return (x, y)
   }
 
   /// 放在光标右下，靠边时翻到另一侧；平时死贴光标，只有翻边那一下滑过去（glide）
@@ -1162,7 +1175,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
   }
 
   /// 待选、拖动框选、拖手柄时显示放大镜（截图翻译 / 识字也是）；平移、标注、鼠标在工具栏上时不显示。交互测试读它
-  var showsMagnifier: Bool {
+  var showsMagnifier: Bool { (magnifierEnabled || pickingColor) && canSampleAtPointer }
+
+  /// 当前交互是否允许按光标定位像素，供放大镜、取色快捷键和整屏准线共用。
+  private var canSampleAtPointer: Bool {
     guard let mouse, !isOverBars(mouse) else { return false }
     switch drag {
     case .move?, .annotate?, .moveAnnotation?, .resizeAnnotation?: return false
@@ -2726,6 +2742,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   /// 参考线只画真落在选区边上的（锁比例时由另一边定大小的那条边不算）；先设它再设选区，refresh 一次画对
   private func showGuides(_ target: (point: CGPoint, x: CGFloat?, y: CGFloat?), on rect: CGRect) {
+    guard snapGuidesEnabled else { return }
     func lands(_ edge: CGFloat?, _ low: CGFloat, _ high: CGFloat) -> CGFloat? {
       guard let edge, abs(edge - low) < 0.01 || abs(edge - high) < 0.01 else { return nil }
       return edge
@@ -2960,7 +2977,13 @@ final class SelectionView: NSView, NSTextViewDelegate {
         pickColor()
         return true
       }
-      if showsMagnifier, let sampled { session.finish(.color(sampled.hex)) }
+      if canSampleAtPointer, let mouse {
+        // 按键时直接取当前像素，即使框选时隐藏了放大镜也能复制色值。
+        let (x, y) = imagePixel(at: mouse)
+        if let sample = Self.sample(image, x: x, y: y, size: 1) {
+          session.finish(.color(sample.hex))
+        }
+      }
       return true
     case .record where !Feature.record.isOn:
       return false

@@ -117,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private lazy var ocrCoordinator = OCRCoordinator(services: ocrServiceStore)
   /// 刘海岛（全局轻提示）
   private let island = Island()
+  private lazy var recognitionProgress = OCRProgress(island: island)
   /// 刘海岛上的系统一瞬提示（电源、电量、耳机、网络；设置 › 刘海岛「系统提示」，开着的才监听）
   private lazy var systemNotices = SystemNotices(island: island)
   /// 刘海岛的正在播放（刘海岛扩展第 2 期）：开着才连包里的正在播放服务
@@ -3112,7 +3113,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func translateInPanel(_ image: CGImage) {
     // 把识字任务挂到当前浮窗会话上，收起或换原文时就能作废它。
     coordinator.recognizeScreenshot { [self] in
-      defer { idleReclaim.schedule() }
       do {
         let result = try await recognizeTranslationImage(image, requiresLayout: false)
         try Task.checkCancellation()
@@ -3221,9 +3221,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       island.show("没有识别到文字", detail: "可以把选区框大一些再试", tone: .warning)
       return nil
     }
-    // 没有结果岛（接着翻译、开浮窗）：「识别中」「正在准备」出过就收掉
-    island.dismiss(ifShowing: Self.recognizingTitle)
-    island.dismiss(ifShowing: Self.preparingTitle)
     return (lines, recordRecognizedTranslation(lines))
   }
 
@@ -3308,40 +3305,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       limit: UserDefaults.standard.integer(forKey: Prefs.translateHistoryLimit))
   }
 
-  /// 识字慢的时候先出「识别中」（第二轮体检 R3）：常见选区 0.04–0.13 s，不出；整屏密集文字约 0.9 s，过了 0.3 s 还没出结果
-  /// 刘海岛先说一声，结果出来原地换掉（识字、截图翻译、钉图上的识字 / 翻译都走这里）
-  private static let recognizingTitle = "识别中…"
-  /// 新装、系统更新后第一次识字：系统要先现场编译识字模型（OCR.prepare，冷的约一分钟）。岛一直挂着、每秒报等了多久，
-  /// 不然看着像卡死了
-  private static let preparingTitle = "正在准备识字模型…"
-
+  /// 识字结束时安排回收模型，顶部的准备与识别提示跟随本次任务。
   private func recognizing<T>(preparesLocalModel: Bool = true, _ work: () async -> T) async -> T {
-    // 进程内识过字，模型就留在内存里：这一路不一定开关面板（⌥O 识字、钉图上识字），自己记得回头放掉
     defer { idleReclaim.schedule() }
-    if preparesLocalModel && !OCR.isPrepared() {
-      let note = "第一次识字要等一分钟左右，以后就快了"
-      island.show(Self.preparingTitle, detail: note, tone: .progress, symbol: "text.viewfinder")
-      let started = ContinuousClock.now
-      let ticker = Task { [island] in
-        while !Task.isCancelled {
-          try? await Task.sleep(for: .seconds(1))
-          let seconds = (ContinuousClock.now - started).components.seconds
-          island.progress(Self.preparingTitle, detail: "\(note) · 已等 \(seconds) 秒")
-        }
-      }
-      await OCR.prepare()
-      ticker.cancel()
-    }
-    return await island.showIfSlow(Self.recognizingTitle, work)
+    return await recognitionProgress.run(preparesLocalModel: preparesLocalModel, work)
   }
 
   /// 有二维码 / 条码就复制它的内容，否则复制识别出的文字（设置里开了就把换行合成一段）；记进剪贴板历史
   private func copyRecognizedText(in image: CGImage) async {
-    let (codes, lines) = await recognizing { () -> ([String], [OCR.Line]?) in
+    await recognizing {
       let codes = await OCR.barcodes(in: image)
       // 有码就不用再识字
-      return (codes, codes.isEmpty ? await OCR.recognizeLines(in: image) : [])
+      let lines = codes.isEmpty ? await OCR.recognizeLines(in: image) : []
+      // 完成提示原地替换识别进度。
+      copyRecognizedText(codes: codes, lines: lines)
     }
+  }
+
+  /// 复制识别结果并在岛上显示完成或失败。
+  private func copyRecognizedText(codes: [String], lines: [OCR.Line]?) {
     var text = codes.joined(separator: "\n")
     if text.isEmpty {
       guard let lines else {
@@ -3683,9 +3665,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     // 功能全关了时上面没有节：别让菜单以一条分隔线开头
     if menu.items.last?.isSeparatorItem == false { menu.addItem(.separator()) }
+    for extra in extras where extra.standaloneFeature != nil { addExtra(extra) }
+    if extras.contains(where: { $0.standaloneFeature != nil }) { menu.addItem(.separator()) }
     addHotKeyBlockItem(to: menu)
     // 速查表只在启动器里（菜单里在 设置 › 快捷键）；退出排在最后
-    for extra in extras where extra.section == nil && extra != .shortcuts { addExtra(extra) }
+    for extra in extras where extra.feature == nil && extra != .shortcuts { addExtra(extra) }
   }
 
   /// 「在「某 App」中停用 / 恢复快捷键」（HotKeyBlock，2026-11-10）：点菜单栏图标不激活本 App，前台还是撞键的那个 App。

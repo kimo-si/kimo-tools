@@ -248,6 +248,7 @@ defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 ## 开发约定
 
 - 用中文回答用户；文档写中文，代码注释可以写中文。
+- 本项目的日常开发统一在 `macos` 分支进行。源项目更新从 `upstream/macos` 合并到本地 `macos`。
 - macOS 代码改动通过本地验证后，默认更新并重启用户当前使用的版本。按现有身份签名，覆盖前验签，重启后确认新版进程正在运行。
 - 每个入口文件头部写注释说明用途。
 - 禁止新增任何第三方依赖（SPM 包、构建 / 格式化工具都算）。

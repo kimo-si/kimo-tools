@@ -8,6 +8,7 @@
 .agents/
 .codegraph/
 .cursor/
+.workbuddy/
 # 只放行 .claude/rules/、.claude/skills/mac-*/
 # （npx skills 装的社区技能是指向 .agents/ 的符号链接，放行会提交成断链）
 .claude/*
@@ -16,9 +17,10 @@
 .claude/skills/*
 !.claude/skills/mac-*/
 
-# Xcode 工程：构建产物、内置密钥（不入库）、用户态
+# Xcode 工程：构建产物、本地签名配置、内置密钥和用户态
 macos/build/
 macos/Config/Secrets.xcconfig
+macos/Config/Development.xcconfig
 xcuserdata/
 
 # Windows 版：构建产物、截图、内置密钥（不入库）、Visual Studio 用户态
