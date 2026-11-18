@@ -820,6 +820,35 @@ struct NoteSyncerTests {
 
   /// 设置、快捷键、功能开关传过去；新加入的那台跟着已有的（它改过、对面没有的回到默认）；跟着这台 Mac 的那几项不传；
   /// 一边改回默认，另一边也回到默认
+  /// 两版使用不同偏好域，只有本机版本同步才传访达总开关和 OCR 服务配置。
+  @Test func localEditionsShareFinderAndOCRSettings() throws {
+    let release = try Mac(host: "Release", root: root)
+    let dev = try Mac(host: "Dev", root: root)
+    defer {
+      release.defaults.removePersistentDomain(forName: release.suite)
+      dev.defaults.removePersistentDomain(forName: dev.suite)
+    }
+    let list = [OCRService.builtin(.tencent)]
+    let finder = Feature.finderMenu.prefsKey
+    release.defaults.set(try JSONEncoder().encode(list), forKey: Prefs.ocrServices)
+    release.defaults.set(true, forKey: finder)
+    #expect(release.settings.syncValues()["pref:\(finder)"] == nil)
+    #expect(release.settings.syncValues()["pref:\(Prefs.ocrServices)"] == nil)
+    for edition in [release, dev] {
+      edition.defaults.set(NoteSyncDisk.editionsFolder.path, forKey: Prefs.notesSyncFolder)
+    }
+    let values = release.settings.syncValues()
+    _ = dev.settings.applySync(values.mapValues(Optional.some), ledger: .init(), library: "local")
+    let saved = try #require(dev.defaults.data(forKey: Prefs.ocrServices))
+    #expect(try JSONDecoder().decode([OCRService].self, from: saved) == list)
+    #expect(dev.defaults.bool(forKey: finder))
+    dev.defaults.set(false, forKey: finder)
+    let changed = dev.settings.syncValues()
+    _ = release.settings.applySync(
+      changed.mapValues(Optional.some), ledger: .init(), library: "local")
+    #expect(!release.defaults.bool(forKey: finder))
+  }
+
   @Test func settingsFollowTheExistingMacs() async throws {
     try makeShared()
     defer { cleanUp() }

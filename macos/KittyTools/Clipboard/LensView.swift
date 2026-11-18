@@ -15,11 +15,15 @@ enum Lens {
   static let head: CGFloat = 40
   static let meta: CGFloat = 22
   static let bottom: CGFloat = 8
+  static let heightWithoutBody = head + meta + bottom
   /// 最高的透镜（代码 / JSON）比普通行多出来的：窗口一直按它预留，↑↓ 永远不改窗口高度
   static let reserve: CGFloat = 128 + meta + bottom
 
   /// 正文区高度（查表，mac-whisker §6）
-  static func bodyHeight(for item: ClipItem, form: ContentForm?) -> CGFloat {
+  static func bodyHeight(
+    for item: ClipItem, form: ContentForm?, panelWidth: CGFloat = ClipboardPanelView.width,
+    groupName: String? = nil
+  ) -> CGFloat {
     switch item.kind {
     case .image: 108
     case .file: 76
@@ -28,15 +32,20 @@ enum Lens {
       case .color: 72
       case .code, .json: 128
       case .link: 90
-      // 行标题已经原样显示全了：不再画第二遍（只按条目自己的数据判断，仍是常数）
-      case nil: ClipRowView.showsWholeText(item) ? 0 : isShort(item.text ?? "") ? 36 : 90
+      case nil:
+        ClipRowView.showsWholeText(item, panelWidth: panelWidth, groupName: groupName)
+          ? 0 : isShort(item.text ?? "") ? 36 : 90
       }
     }
   }
 
   /// 透镜总高 = 行头 + 正文 + 元信息 + 底（最高 198，标题已显示全的文本最矮 70）
-  static func height(for item: ClipItem, form: ContentForm?) -> CGFloat {
-    head + bodyHeight(for: item, form: form) + meta + bottom
+  static func height(
+    for item: ClipItem, form: ContentForm?, panelWidth: CGFloat = ClipboardPanelView.width,
+    groupName: String? = nil
+  ) -> CGFloat {
+    heightWithoutBody
+      + bodyHeight(for: item, form: form, panelWidth: panelWidth, groupName: groupName)
   }
 
   /// 没有换行且不超过 60 字：两行高就够，免得一行字下面空一大块
@@ -55,8 +64,9 @@ enum Lens {
   static let hitColor = Color(nsColor: .systemYellow).opacity(0.35)
 
   /// VoiceOver 的透镜值：「类型 · 前 200 字」；没有正文区的（行标题已经把全文念过了）只说类型
-  static func accessibilityValue(for item: ClipItem, form: ContentForm?) -> String {
-    guard bodyHeight(for: item, form: form) > 0 else { return typeTitle(item, form: form) }
+  static func accessibilityValue(for item: ClipItem, form: ContentForm?, height: CGFloat) -> String
+  {
+    guard height > heightWithoutBody else { return typeTitle(item, form: form) }
     let body =
       switch item.kind {
       case .text: String((item.text ?? "").prefix(200))
@@ -108,14 +118,15 @@ struct LensView: View {
   let item: ClipItem
   let form: ContentForm?
   let model: ClipboardPanelModel
+  let height: CGFloat
 
   var body: some View {
-    let height = Lens.bodyHeight(for: item, form: form)
+    let bodyHeight = height - Lens.heightWithoutBody
     VStack(alignment: .leading, spacing: 0) {
-      if height > 0 {
+      if bodyHeight > 0 {
         content
           .frame(maxWidth: .infinity, alignment: .topLeading)
-          .frame(height: height, alignment: .topLeading)
+          .frame(height: bodyHeight, alignment: .topLeading)
           .clipped()
           .fading(when: fades)
       }

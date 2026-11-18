@@ -7,10 +7,18 @@
 import AppKit
 import Carbon.HIToolbox
 import Foundation
+import QuartzCore
 import SwiftUI
 import Testing
 
 @testable import KittyTools
+
+/// 用显示链在屏外测主线程回调间隔。
+private final class ClipGroupFrameClock: NSObject {
+  var times: [CFTimeInterval] = []
+
+  @objc func tick(_ link: CADisplayLink) { times.append(CACurrentMediaTime()) }
+}
 
 struct ClipboardStoreTests {
   let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
@@ -242,6 +250,27 @@ struct ClipboardStoreTests {
     store.saveSnippet("新的")
     #expect(store.items.count == 2)
     #expect(store.items.allSatisfy { $0.isSnippet })
+  }
+
+  /// 复用撤销栈里的同文条目时，保存指定分组；已删除的分组不会成为新片段的归属。
+  @Test func snippetGroupsPersistWhenRestoringAndIgnoreDeletedGroups() throws {
+    let (store, db) = try makeStore()
+    let target = try #require(store.createGroup(named: "工作"))
+    let original = text("回复")
+    store.record(original)
+    store.deleteWithUndo([original.id])
+    #expect(store.saveSnippet("回复", name: "模板", in: target.id) == original.id)
+    #expect(!store.canUndo)
+
+    let deleted = try #require(store.createGroup(named: "已删除"))
+    store.deleteGroup(deleted.id)
+    let ungroupedID = try #require(store.saveSnippet("另一条", in: deleted.id))
+    let (reloaded, _) = try makeStore(db)
+    let restored = try #require(reloaded.items.first { $0.id == original.id })
+    let ungrouped = try #require(reloaded.items.first { $0.id == ungroupedID })
+    #expect(restored.favorite && restored.isSnippet && restored.groupID == target.id)
+    #expect(restored.note == "模板")
+    #expect(ungrouped.isSnippet && !ungrouped.favorite && ungrouped.groupID == nil)
   }
 
   /// 收藏夹：名字去空白、不重名、超过 24 字不收（不截断）；拖动排序落库；删掉后条目留在收藏，⌘Z 连位置和归属一起回来
@@ -508,29 +537,31 @@ struct ClipboardStoreTests {
     // 上下内缩 12 + 分组标题 24 + 两行 80（+ 透镜预留 158）
     #expect(ClipboardPanelView.listHeight(rows: 2, sections: 1, reservesLens: true) == 274)
     #expect(ClipboardPanelView.listHeight(rows: 2, sections: 1, reservesLens: false) == 116)
-    #expect(ClipboardPanelView.listHeight(rows: 50, sections: 3, reservesLens: true) == 427.5)
+    #expect(ClipboardPanelView.listHeight(rows: 50, sections: 3, reservesLens: true) == 392.5)
     let (store, _) = try makeStore()
     for index in 0..<3 { store.record(text("条目 \(index)", ago: Double(10 - index))) }
     let model = ClipboardPanelModel(store: store)
     let height = ClipboardPanelView.height(for: model, showsLens: true, banner: false)
-    #expect(height == 406.5)  // 56 + 0.5 + (12 + 24 + 120 + 158) + 36
+    #expect(height == 441.5)  // 搜索 56 + 分组列 35 + 0.5 + (12 + 24 + 120 + 158) + 底栏 36
     // ↑↓ 换选中不改窗口高度（透镜预留是常数）
     model.select(store.items[2])
     #expect(ClipboardPanelView.height(for: model, showsLens: true, banner: false) == height)
     // 浮起的菜单要放得下 8.5 行、对话框给满
     model.palette = .filters
-    #expect(ClipboardPanelView.height(for: model, showsLens: false, banner: false) == 356.5)
+    #expect(ClipboardPanelView.height(for: model, showsLens: false, banner: false) == 391.5)
+    model.palette = .types
+    #expect(ClipboardPanelView.height(for: model, showsLens: false, banner: false) == 391.5)
     model.palette = nil
     model.dialog = .newSnippet
     #expect(ClipboardPanelView.height(for: model, showsLens: true, banner: true) == 550)
     // 片段范围多一行「新建片段」，没有片段时也不是空态
     model.dialog = nil
     model.scope = .snippets
-    #expect(ClipboardPanelView.height(for: model, showsLens: true, banner: false) == 144.5)
+    #expect(ClipboardPanelView.height(for: model, showsLens: true, banner: false) == 179.5)
     // 片段范围里搜索没有结果：不画「新建片段」，给「没有匹配的条目」空态（高 140）
     model.query = "zzzz"
     #expect(model.isFiltered && !model.showsNewSnippetRow(in: model.visibleItems))
-    #expect(ClipboardPanelView.height(for: model, showsLens: true, banner: false) == 232.5)
+    #expect(ClipboardPanelView.height(for: model, showsLens: true, banner: false) == 267.5)
   }
 
   @Test func listLayoutPrefixSums() {
@@ -585,7 +616,12 @@ struct ClipboardStoreTests {
   ) throws -> (item: ClipItem, row: CGRect, drawn: [CGRect]) {
     let view = try #require(window.contentView)
     let item = try #require(model.selectedItem)
-    let lens = Lens.height(for: item, form: model.contentForm(of: item))
+    let groupName =
+      model.groupFilter == .all
+      ? model.store.groups.first { $0.id == item.groupID }?.name : nil
+    let lens = Lens.height(
+      for: item, form: model.contentForm(of: item), panelWidth: view.bounds.width,
+      groupName: groupName)
     let drawn = drawnRows(in: view).sorted { $0.maxY > $1.maxY }
     let expanded = drawn.filter { $0.height > ClipRowView.height + 1 }
     #expect(expanded.count == 1 && abs(expanded[0].height - lens) < 0.5, step)
@@ -596,6 +632,24 @@ struct ClipboardStoreTests {
       abs(card.rect.minY - (view.bounds.height - row.maxY)) < 0.5
         && abs(card.rect.height - lens) < 0.5, step)
     return (item, row, drawn)
+  }
+
+  /// 带分组和收藏标记的单行文本，默认宽度只显示标题，缩窄后恢复正文。
+  @Test func lensShowsTextOnlyOnceWhenTitleFits() throws {
+    let (store, _) = try makeStore()
+    let group = try #require(store.createGroup(named: "工作用"))
+    var item = text(String(repeating: "m", count: 32))
+    item.groupID = group.id
+    item.favorite = true
+    store.record(item)
+    let model = ClipboardPanelModel(store: store)
+    let (window, close) = try showPanel(model)
+    defer { close() }
+    RunLoop.main.run(until: .now.addingTimeInterval(0.4))
+    #expect(try expectLens(model, in: window, "默认宽度").row.height == 70)
+    window.setContentSize(NSSize(width: Style.listPanelWidths.lowerBound, height: 520))
+    RunLoop.main.run(until: .now.addingTimeInterval(0.4))
+    #expect(try expectLens(model, in: window, "缩窄之后").row.height == 106)
   }
 
   /// 选中行换了所在分组（搜索前后、昨天的条目再复制挪进「今天」）后照样按透镜高度展开、跟着选中走：
@@ -689,6 +743,92 @@ struct ClipboardStoreTests {
     try expectLens(model, in: window, "中间 ↓")
   }
 
+  /// 切换长列表、分组和空态时，旧视口不能覆盖新透镜的位置，再切回 ALL 应从顶端开始。
+  @Test func groupTransitionKeepsLatestViewport() throws {
+    let fixture = try groupTransitionHistory()
+    let model = fixture.model
+    let (window, close) = try showPanel(model)
+    defer { close() }
+    let view = try #require(window.contentView)
+    settleGroupTransition()
+    let top = try expectLens(model, in: window, "ALL 的第一条").row
+    model.select(model.visibleItems[4_400])
+    settleGroupTransition()
+    try expectLens(model, in: window, "滚动到较早的历史")
+
+    for group in [fixture.populated, fixture.empty, .all, fixture.populated, fixture.empty] {
+      model.selectGroup(group)
+      RunLoop.main.run(until: .now.addingTimeInterval(0.04))
+      #expect(drawnRows(in: view).count < 80)
+    }
+    settleGroupTransition()
+    #expect(model.cardFrame == nil && drawnRows(in: view).isEmpty)
+    model.selectGroup(.all)
+    settleGroupTransition()
+    let current = try expectLens(model, in: window, "快速切换后返回 ALL")
+    #expect(current.item.id == model.visibleItems.first?.id)
+    #expect(abs(current.row.maxY - top.maxY) < 1)
+  }
+
+  /// 批量备好 4,800 条历史，包含可滚动的分组和空分组。
+  private func groupTransitionHistory() throws -> (
+    model: ClipboardPanelModel, populated: ClipboardPanelModel.GroupFilter,
+    empty: ClipboardPanelModel.GroupFilter
+  ) {
+    let (store, db) = try makeStore()
+    let populated = try #require(store.createGroup(named: "工作"))
+    let empty = try #require(store.createGroup(named: "空分组"))
+    let now = Date.now.timeIntervalSinceReferenceDate
+    // 一次事务只为准备测试数据，之后让产品的存储正常加载。
+    try db.transaction {
+      for index in 0..<4_800 {
+        let group = index.isMultiple(of: 3) ? populated.id.uuidString : nil
+        try db.execute(
+          "INSERT INTO clips(id, kind, text, copied_at, favorite, group_id) VALUES (?, ?, ?, ?, ?, ?)",
+          [UUID().uuidString, "text", "分组过渡测试 \(index)", now - Double(index), group != nil, group])
+      }
+    }
+    let (loaded, _) = try makeStore(db)
+    return (ClipboardPanelModel(store: loaded), .group(populated.id), .group(empty.id))
+  }
+
+  /// 等视口过渡和跟随滚动结束，再比较实际行位置。
+  private func settleGroupTransition() {
+    RunLoop.main.run(until: .now.addingTimeInterval(0.45))
+  }
+
+  /// 按需量 4,800 条历史换组时的主线程掉帧，窗口在屏外。
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_CLIP_GROUP_FRAMES"] != nil))
+  func measureGroupTransitionFrames() async throws {
+    let fixture = try groupTransitionHistory()
+    let (window, close) = try showPanel(fixture.model)
+    defer { close() }
+    let screen = try #require(window.screen ?? NSScreen.main)
+    let clock = ClipGroupFrameClock()
+    let link = screen.displayLink(target: clock, selector: #selector(ClipGroupFrameClock.tick(_:)))
+    let rate = Float(min(60, screen.maximumFramesPerSecond))
+    link.preferredFrameRateRange = CAFrameRateRange(minimum: rate, maximum: rate, preferred: rate)
+    link.add(to: .main, forMode: .common)
+    defer { link.invalidate() }
+    try await Task.sleep(for: .milliseconds(350))
+    clock.times = []
+    try await Task.sleep(for: .milliseconds(450))
+    let idleGaps = zip(clock.times.dropFirst(), clock.times).map { $0 - $1 }
+    clock.times = []
+    for group in [fixture.populated, .all, fixture.empty, .all, fixture.populated, .all] {
+      fixture.model.selectGroup(group)
+      try await Task.sleep(for: .milliseconds(260))
+    }
+    let gaps = zip(clock.times.dropFirst(), clock.times).map { $0 - $1 }
+    #expect(gaps.count > 30)
+    let delayed = gaps.count { $0 * Double(rate) > 1.5 }
+    let longest = (gaps.max() ?? 0) * 1000
+    let idleLongest = (idleGaps.max() ?? 0) * 1000
+    print(
+      "clip-group-frames \(rate) Hz，\(gaps.count) 个间隔，超时 \(delayed) 次，最长 \(longest) ms，"
+        + "空闲最长 \(idleLongest) ms")
+  }
+
   /// 列表靠后时 ↑↓ 也快（2026-10-03 用户报卡顿）：找当前选中项时只搜一遍列表。原来在 firstIndex 的闭包里每比一条
   /// 都重新搜索、过滤整个列表，选中第 700 条时按一下要 300 ms
   @Test func movingDeepInLongListIsCheap() throws {
@@ -731,17 +871,17 @@ struct ClipboardStoreTests {
     store.record(text("a", ago: 2))
     store.record(text("b", ago: 1))
     let model = ClipboardPanelModel(store: store)
-    #expect(model.actions.contains { $0.title == "放进新收藏夹…" && $0.submenu == nil })
+    #expect(model.actions.contains { $0.title == "放进新分组…" && $0.submenu == nil })
     let work = try #require(store.createGroup(named: "工作"))
     let home = try #require(store.createGroup(named: "生活"))
     let submenu = { model.actions.first { $0.id == "groups" }?.submenu ?? [] }
-    #expect(submenu().map(\.title) == ["工作", "生活", "新建收藏夹…"])
+    #expect(submenu().map(\.title) == ["工作", "生活", "新建分组…"])
     #expect(submenu().allSatisfy { $0.isChecked != true })
     store.moveGroup(home.id, to: 0)
-    #expect(submenu().map(\.title) == ["生活", "工作", "新建收藏夹…"])
+    #expect(submenu().map(\.title) == ["生活", "工作", "新建分组…"])
     submenu().first { $0.title == "工作" }?.run()
     #expect(store.items[0].groupID == work.id && store.items[0].favorite)
-    #expect(submenu().map(\.title) == ["生活", "工作", "移出收藏夹", "新建收藏夹…"])
+    #expect(submenu().map(\.title) == ["生活", "工作", "移出分组", "新建分组…"])
     #expect(submenu().first { $0.title == "工作" }?.isChecked == true)
     // 再选一次打了 ✓ 的：移出，留在默认收藏
     submenu().first { $0.title == "工作" }?.run()
@@ -751,7 +891,7 @@ struct ClipboardStoreTests {
     submenu().first { $0.title == "生活" }?.run()
     #expect(store.items.allSatisfy { $0.groupID == home.id && $0.favorite })
     #expect(submenu().first { $0.title == "生活" }?.isChecked == true)
-    submenu().first { $0.title == "移出收藏夹" }?.run()
+    submenu().first { $0.title == "移出分组" }?.run()
     #expect(store.items.allSatisfy { $0.groupID == nil && $0.favorite })
     // 多选底栏「收藏夹…」是同一份列表
     model.palette = .groups
@@ -759,7 +899,7 @@ struct ClipboardStoreTests {
     // 筛选面板：收藏夹紧跟在「收藏」下面，最后是「管理收藏夹…」；范围和收藏夹、类型和形态、来源、管理各是一节
     let filters = model.filterItems
     #expect(Array(filters.prefix(4).map(\.title)) == ["收藏", "生活", "工作", "片段"])
-    #expect(filters.last?.title == "管理收藏夹…" && filters.last?.section == 3)
+    #expect(filters.last?.title == "管理分组…" && filters.last?.section == 3)
     #expect(filters.first { $0.title == "文本" }?.section == 1)
   }
 

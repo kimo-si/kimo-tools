@@ -95,7 +95,9 @@ enum Prefs {
   static let clipboardShowPreview = "clipboardShowPreview"
   /// 检查器的链接卡联网取网页标题、头图和图标（LinkPreview）
   static let clipboardLinkPreview = "clipboardLinkPreview"
-  /// 单击条目直接粘贴（设置 › 剪贴板「面板」，默认关 = 单击选中、双击粘贴）；⌘ 单击、⇧ 单击不看它，照常多选
+  /// 确认历史条目时只写系统剪贴板，收起面板后由用户手动粘贴。
+  static let clipboardCopyOnConfirm = "clipboardCopyOnConfirm"
+  /// 单击后执行默认操作（默认关 = 单击选中、双击确认）；⌘ 单击、⇧ 单击照常多选。
   static let clipboardPasteOnClick = "clipboardPasteOnClick"
   /// 剪贴板面板出现在哪（设置 › 剪贴板「面板」，2026-11-04 用户要求和翻译浮窗一致）：top 鼠标所在屏的上方正中（默认）/
   /// mouse 光标右下（放不下翻到另一侧）/ last 上次拖到的地方（没拖过 = 屏幕上方）。启动器同一套（launcherPanelPosition）
@@ -231,6 +233,17 @@ enum Prefs {
 
   /// 识字后把同一段的换行合成一行（中日文直接连、其它加空格）
   static let ocrJoinLines = "ocrJoinLines"
+
+  /// OCR 浮窗（2026-11-17，照 Bob 的 OCR）：服务列表的 JSON（OCRService 数组；**不注册默认值**，没存过时只有 Apple 系统）、
+  /// 顶部服务胶囊（空 = 全部启用的服务）、识别语言（空 = 自动）、识别后自动复制、浮窗位置
+  nonisolated static let ocrServices = "ocrServices"
+  static let ocrService = "ocrService"
+  static let ocrLanguage = "ocrLanguage"
+  static let ocrAutoCopy = "ocrAutoCopy"
+  static let ocrPanelPosition = "ocrPanelPosition"
+  /// OCR 浮窗拖过的宽度 / 拖下边定的最高多高（这台电脑自己的，**不注册默认值**，同翻译浮窗）
+  static let ocrPanelWidth = "ocrPanelWidth"
+  static let ocrPanelMaxHeight = "ocrPanelMaxHeight"
   /// 识字模型已经为哪个系统版本编好了（OCR.prepare；存系统版本字符串）。这台电脑自己的状态：不注册默认值、不跟着导出
   nonisolated static let ocrPreparedSystem = "ocrPreparedSystem"
 
@@ -384,6 +397,19 @@ enum Prefs {
   /// 访达右键把我们的项都收进一个「Kitty Tools ▸」子菜单（默认关、平铺在第一层；设置 › 访达右键，2026-11-08 用户同意的建议）。
   /// 扩展读同一个键，键名和默认值在 KittyToolsFinder/FinderMenu 里抄了一份
   nonisolated static let finderMenuGrouped = "finderMenuGrouped"
+  /// 默认应用页关注的后缀（逐行保存）。系统自身保存具体的默认应用。
+  static let defaultAppExtensions = "defaultAppExtensions"
+  /// 各 App 的输入源和中英文模式，正式版与 Dev 通过设置同步共用。
+  static let appInputRules = "appInputRules"
+  /// 未配置专属规则的 App 进入时应用的输入源和中英文模式。
+  static let appInputDefaultSource = "appInputDefaultSource"
+  static let appInputDefaultMode = "appInputDefaultMode"
+  /// 使用「跟随设置」的中文输入法规则在进入 App 时默认切到中文。
+  static let appInputPrefersChinese = "appInputPrefersChinese"
+  /// 预置后缀升级只做一次，保留用户此后增删的列表。
+  static let defaultAppPresetSeeded = "defaultAppPresetSeeded"
+  /// WinC 初始关联由 Dev 和正式版共用，防止切换版本时重新覆盖系统关联。
+  static let defaultAppWinCPresetHandled = "defaultAppWinCPresetHandled"
   /// 访达右键压缩时另外跳过的名字（设置 › 访达右键「压缩时跳过」，2026-11-13 拍板 Z1）：逗号隔开，* ? 通配，只认名字不认路径，
   /// 默认空 = 和原来一样（Mac 杂文件照旧总跳过）。只有 App 读，扩展不读；注册了默认值，跟着导出、同步（Z4）
   nonisolated static let finderCompressSkip = "finderCompressSkip"
@@ -523,6 +549,7 @@ enum Prefs {
       clipboardClearOnLock: false,
       clipboardShowPreview: true,
       clipboardLinkPreview: true,
+      clipboardCopyOnConfirm: false,
       clipboardPasteOnClick: false,
       clipboardPanelPosition: "top",
       launcherPanelPosition: "top",
@@ -543,6 +570,10 @@ enum Prefs {
       translateFontScale: 1.0,
       translateCollapsedServices: "",
       ocrJoinLines: false,
+      ocrService: "",
+      ocrLanguage: "",
+      ocrAutoCopy: true,
+      ocrPanelPosition: "top",
       screenshotShutterSound: true,
       screenshotPlacement: ShotPlacement.corner.rawValue,
       screenshotToolbarAlign: "right",
@@ -586,6 +617,11 @@ enum Prefs {
       notesDeckOverFullScreen: false,
       notesDeckNoteSize: NoteDeckOptions.NoteSize.medium.rawValue,
       finderMenuGrouped: false,
+      defaultAppExtensions: DefaultFileType.presetExtensions,
+      appInputRules: "[]",
+      appInputDefaultSource: AppInputRule.keepCurrentSource,
+      appInputDefaultMode: "",
+      appInputPrefersChinese: true,
       finderCompressSkip: "",
       islandActionOrder: "",
       islandActionsOff: "",
@@ -680,6 +716,8 @@ enum Prefs {
   ) {
     // 只看用户自己存过的值（registerDefaults 给的默认不在持久域里）
     let domain = domainName.flatMap(defaults.persistentDomain(forName:)) ?? [:]
+    // 首次升级时将预置文本后缀并入已保存的列表，以后按用户的增删保留。
+    migrateDefaultAppPreset(defaults, saved: domain[defaultAppExtensions] as? String)
     if domain[clipboardExcludedBundleIDs] == nil,
       let old = domain[clipboardExcludedAppsLegacy] as? [String]
     {
@@ -729,5 +767,15 @@ enum Prefs {
       defaults.set(
         translateHistoryLimitChoices.first { $0 >= limit } ?? 0, forKey: translateHistoryLimit)
     }
+  }
+
+  /// 旧版本的自定义后缀照原顺序保留，缺少的预置后缀补在后面。
+  private static func migrateDefaultAppPreset(_ defaults: UserDefaults, saved: String?) {
+    guard !defaults.bool(forKey: defaultAppPresetSeeded) else { return }
+    if let saved {
+      let extensions = DefaultFileType.addingPreset(to: saved)
+      if saved != extensions { defaults.set(extensions, forKey: defaultAppExtensions) }
+    }
+    defaults.set(true, forKey: defaultAppPresetSeeded)
   }
 }

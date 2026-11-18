@@ -12,6 +12,7 @@ struct ClipboardTab: View {
   @AppStorage(Prefs.clipboardImageBudgetMB) private var imageBudgetMB = 512
   @AppStorage(Prefs.clipboardShowPreview) private var showPreview = true
   @AppStorage(Prefs.clipboardLinkPreview) private var linkPreview = true
+  @AppStorage(Prefs.clipboardCopyOnConfirm) private var copyOnConfirm = false
   @AppStorage(Prefs.clipboardPasteOnClick) private var pasteOnClick = false
   @AppStorage(Prefs.clipboardPanelPosition) private var panelPosition = "top"
   @AppStorage(Prefs.clipboardPastePlain) private var pastePlain = false
@@ -64,9 +65,13 @@ struct ClipboardTab: View {
           Text("链接显示网页标题和图片")
           Text("选中链接时联网读取；本机、内网和带登录令牌的网址不读")
         }
+        Toggle(isOn: $copyOnConfirm) {
+          Text("确认条目时仅复制")
+          Text("开启后，确认条目会复制到系统剪贴板并收起面板，需要时再按 ⌘V 粘贴")
+        }
         Toggle(isOn: $pasteOnClick) {
-          Text("单击条目直接粘贴")
-          Text("关着时单击选中、双击粘贴；打开后点一下就粘贴，想先看内容用 ↑↓，⌘ 单击、⇧ 单击照常多选")
+          Text(copyOnConfirm ? "单击条目直接复制" : "单击条目直接粘贴")
+          Text("关着时单击选中、双击确认。↑↓ 可预览，⌘ 单击、⇧ 单击可多选")
         }
         Picker(selection: $panelPosition) {
           Text("屏幕上方").tag("top")
@@ -84,8 +89,8 @@ struct ClipboardTab: View {
       .gated(by: .clipboard)
       Section("内容") {
         Toggle(isOn: $pastePlain) {
-          Text("默认粘贴为纯文本")
-          Text("打开后 ↩ 粘贴纯文本，⌥↩ 保留格式；文字的格式总是记下来")
+          Text(copyOnConfirm ? "确认时默认复制为纯文本" : "默认粘贴为纯文本")
+          Text("打开后 ↩ 使用纯文本，⌥↩ 保留格式；文字的格式总是记下来")
         }
         Toggle("识别图片中的文字，用于搜索", isOn: $imageOCR)
       }

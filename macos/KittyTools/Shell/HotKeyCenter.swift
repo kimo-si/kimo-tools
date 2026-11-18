@@ -169,7 +169,7 @@ enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
     screenshotLastRegion, recognizeText, translateReplace, screenRecord, audioRecord, pinClipboard,
     statusScreen, noteCapture, noteNew, noteAll, launchpad, shotHistory, island, clothesline, home,
-    reminderNew
+    reminderNew, screenshotOCR, imageTranslate
 
   var title: String {
     switch self {
@@ -195,6 +195,8 @@ enum HotKeyAction: String, CaseIterable {
     case .island: "打开刘海岛"
     case .home: "打开主界面"
     case .reminderNew: "新建提醒"
+    case .screenshotOCR: "截图 OCR"
+    case .imageTranslate: "原图翻译"
     }
   }
 
@@ -242,6 +244,10 @@ enum HotKeyAction: String, CaseIterable {
     case .screenshotLastRegion: HotKey(keyCode: kVK_ANSI_X, modifiers: optionKey)
     // iShot 的默认键（O = OCR）
     case .recognizeText: HotKey(keyCode: kVK_ANSI_O, modifiers: optionKey)
+    // OCR 浮窗：⌥O 是静默识字，加 ⇧ 区分（识别完弹窗看结果、可换服务商）
+    case .screenshotOCR: HotKey(keyCode: kVK_ANSI_O, modifiers: optionKey | shiftKey)
+    // 原图翻译（Bob 的截图翻译就是这种）：截图翻译 ⌥S 加 ⇧，译文直接盖回图上，不开翻译浮窗
+    case .imageTranslate: HotKey(keyCode: kVK_ANSI_S, modifiers: optionKey | shiftKey)
     // 选中文字直接换成译文，不弹窗（Bob 的静默划词翻译也不设默认键）
     case .translateReplace: nil
     // R = Record，和截图框选里将来（第 2 批）按 R 转录屏对上
@@ -321,7 +327,10 @@ enum HotKeyAction: String, CaseIterable {
     switch self {
     case .clipboard: .clipboard
     case .launcher: .launcher
-    case .selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate: .translate
+    case .selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate,
+      .imageTranslate:
+      .translate
+    case .screenshotOCR: .ocr
     case .screenshot, .screenshotLastRegion, .recognizeText, .pinClipboard, .shotHistory,
       .clothesline:
       .screenshot
@@ -345,7 +354,15 @@ enum HotKeyAction: String, CaseIterable {
 
   private static let allSections: [(title: String, actions: [HotKeyAction])] = [
     ("剪贴板与启动器", [.clipboard, .launcher]),
-    ("翻译", [.selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate]),
+    (
+      "翻译",
+      [
+        .selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate,
+        .imageTranslate,
+      ]
+    ),
+    // OCR（2026-11-17）：截图识别文字，和翻译分开一节（设置侧栏也单开一页）
+    ("OCR", [.screenshotOCR]),
     // 钉住剪贴板里的图排在最后：菜单栏、启动器里有钉图时紧接着是「隐藏 / 关闭全部钉图」（MenuExtra），钉图的几项挨在一起
     (
       "截图与录制",
@@ -425,6 +442,8 @@ enum HotKeyAction: String, CaseIterable {
     // 从菜单栏垂下来的那一块
     case .home: "kitty.home"
     case .reminderNew: SettingsPage.reminders.symbol
+    case .screenshotOCR: "kitty.ocr"
+    case .imageTranslate: "kitty.translate.photo"
     }
   }
 
@@ -433,8 +452,10 @@ enum HotKeyAction: String, CaseIterable {
     switch self {
     case .clipboard: Style.Family.clipboard
     case .launcher: Style.Family.command
-    case .selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate:
+    case .selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate,
+      .imageTranslate:
       Style.Family.translate
+    case .screenshotOCR: Style.Family.ocr
     case .screenshot, .screenshotLastRegion, .recognizeText, .screenRecord, .audioRecord,
       .pinClipboard, .shotHistory, .clothesline:
       Style.Family.screenshot

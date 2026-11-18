@@ -9,6 +9,7 @@ nonisolated enum FinderMenuItem: String, CaseIterable {
   // rawValue 拼进偏好键，不能改
   case newFile = "NewFile"
   case copyPath = "CopyPath"
+  case copyParentPath = "CopyParentPath"
   case copyName = "CopyName"
   case transfer = "Transfer"
   case cut = "Cut"
@@ -30,8 +31,9 @@ nonisolated enum FinderMenuItem: String, CaseIterable {
   var title: String {
     switch self {
     case .newFile: "显示「新建文件」"
-    case .copyPath: "显示「拷贝路径」"
-    case .copyName: "显示「拷贝名称」"
+    case .copyPath: "显示「复制路径」"
+    case .copyParentPath: "显示「复制父路径」"
+    case .copyName: "显示「复制名称」"
     case .transfer: "显示「移动到」「复制到」"
     case .cut: "显示「剪切」和「粘贴」"
     case .deskAlias: "显示「发送替身到桌面」"
@@ -50,6 +52,7 @@ nonisolated enum FinderMenuItem: String, CaseIterable {
     switch self {
     case .newFile: "文件夹窗口的空白处右键"
     case .copyPath: "右键文件、文件夹，或者文件夹窗口的空白处"
+    case .copyParentPath: "复制所在的文件夹路径，多选时相同目录只复制一次"
     case .copyName: "右键文件、文件夹；几样就一行一个，带扩展名"
     case .transfer: "右键文件、文件夹：送到下面的常用文件夹，或者另选一个"
     case .cut: "剪切之后，到别的文件夹空白处（或者右键那个文件夹）「粘贴」，或者在访达里按 ⌥⌘V"

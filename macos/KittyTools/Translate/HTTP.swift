@@ -2,6 +2,7 @@
 // 红线：错误信息和日志里不出现请求 URL、请求头和密钥。
 
 import Foundation
+import Synchronization
 
 nonisolated struct TranslateError: LocalizedError, Sendable, Equatable {
   /// 错误卡按它分（体检 C5，mac-whisker §3 语义色）：配置 / 密钥问题橙色、只给「打开设置」（直达这个服务的详情页）；
@@ -28,6 +29,8 @@ nonisolated struct TranslateError: LocalizedError, Sendable, Equatable {
   static let truncated = TranslateError(message: "只翻了前一部分：超出这个服务单次输出上限")
   /// 浮窗收起、换了新会话时没出完的卡片（点重试、或再按输入翻译热键重新打开时自动重跑）
   static let interrupted = TranslateError(message: "已中断，点重试重新翻译")
+  /// 心跳、思考内容都不算译文进展；超时后允许上层换服务。
+  static let timedOut = TranslateError(message: "等待译文超时，请重试或切换翻译服务", kind: .network)
 
   /// 配置类错误（缺密钥、地址或模型没填）
   static func config(_ message: String) -> TranslateError {
@@ -36,25 +39,84 @@ nonisolated struct TranslateError: LocalizedError, Sendable, Equatable {
 }
 
 nonisolated enum HTTP {
-  /// 本机 / 局域网上的大模型可能很慢，给更长的空闲超时
-  static func session(for url: URL) -> URLSession {
-    isLocalNetwork(url) ? localSession : URLSession.shared
+  /// 空闲时间按有效译文计算，总时间覆盖连接、参数降级和生成；本机模型保留较长的预算。
+  struct Limits: Sendable {
+    var idle: TimeInterval
+    var total: TimeInterval
+    static let remote = Limits(idle: 30, total: 90)
+    static let local = Limits(idle: 180, total: 600)
   }
 
-  private static let localSession: URLSession = {
-    let configuration = URLSessionConfiguration.default
-    configuration.timeoutIntervalForRequest = 180
-    return URLSession(configuration: configuration)
-  }()
+  /// 按地址选择网络和有效译文共用的时限。
+  static func limits(for url: URL) -> Limits {
+    isLocalNetwork(url) ? .local : .remote
+  }
 
+  /// 翻译使用独立会话，设置真正的总时限，不让 SSE 心跳把请求无限延长。
+  static func session(for url: URL) -> URLSession {
+    isLocalNetwork(url) ? localSession : remoteSession
+  }
+
+  private static let remoteSession = makeSession(.remote)
+  private static let localSession = makeSession(.local)
+
+  /// 总时限也覆盖非流式接口和错误响应体的读取。
+  private static func makeSession(_ limits: Limits) -> URLSession {
+    let configuration = URLSessionConfiguration.default
+    configuration.timeoutIntervalForRequest = limits.idle
+    configuration.timeoutIntervalForResource = limits.total
+    return URLSession(configuration: configuration)
+  }
+
+  /// 构造 JSON 请求，沿用同一份网络空闲时限。
   static func request(_ url: URL, headers: [String: String], json: [String: Any]) -> URLRequest {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
-    request.timeoutInterval = isLocalNetwork(url) ? 180 : 30
+    request.timeoutInterval = limits(for: url).idle
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
     request.httpBody = try? JSONSerialization.data(withJSONObject: json)
     return request
+  }
+
+  /// 只由真实译文更新的进度；定时器睡到下一个截止时间，不随心跳或每个 token 创建新任务。
+  final class Progress: Sendable {
+    private let started = ContinuousClock.now
+    private let latest = Mutex(ContinuousClock.now)
+
+    /// 只有出现新的非空译文时续期，纯思考和重复内容不能续期。
+    func receivedText() { latest.withLock { $0 = .now } }
+
+    /// 等待无译文进展或整次请求用完预算；调用方负责抛出统一的超时错误。
+    func waitForExpiration(_ limits: Limits) async throws {
+      let deadline = started + .seconds(limits.total)
+      while true {
+        let next = min(deadline, latest.withLock { $0 } + .seconds(limits.idle))
+        try await Task.sleep(until: next, clock: .continuous)
+        try Task.checkCancellation()
+        let idleUntil = latest.withLock { $0 } + .seconds(limits.idle)
+        if ContinuousClock.now >= min(deadline, idleUntil) { return }
+      }
+    }
+  }
+
+  /// 请求与截止时间竞速，完成、报错、取消都收掉另一条任务；取消不能冒充翻译成功。
+  static func withProgressTimeout<T: Sendable>(
+    limits: Limits, work: @escaping @Sendable (Progress) async throws -> T
+  ) async throws -> T {
+    try Task.checkCancellation()
+    let progress = Progress()
+    return try await withThrowingTaskGroup(of: T.self) { group in
+      group.addTask { try await work(progress) }
+      group.addTask {
+        try await progress.waitForExpiration(limits)
+        throw TranslateError.timedOut
+      }
+      defer { group.cancelAll() }
+      guard let result = try await group.next() else { throw CancellationError() }
+      try Task.checkCancellation()
+      return result
+    }
   }
 
   /// 一次性请求，返回解析好的 JSON
@@ -73,14 +135,17 @@ nonisolated enum HTTP {
       try await session(for: request.url!).bytes(for: request)
     }
     if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+      defer { bytes.task.cancel() }
       var body = Data()
       for try await byte in bytes.prefix(64 * 1024) { body.append(byte) }
       try check(response, (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:])
     }
     return AsyncThrowingStream { continuation in
       let task = Task {
+        defer { bytes.task.cancel() }
         do {
           for try await line in bytes.lines {
+            try Task.checkCancellation()
             guard line.hasPrefix("data:") else { continue }
             let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
             if payload == "[DONE]" { break }
@@ -91,7 +156,10 @@ nonisolated enum HTTP {
           continuation.finish(throwing: userFacing(error))
         }
       }
-      continuation.onTermination = { _ in task.cancel() }
+      continuation.onTermination = { _ in
+        task.cancel()
+        bytes.task.cancel()
+      }
     }
   }
 

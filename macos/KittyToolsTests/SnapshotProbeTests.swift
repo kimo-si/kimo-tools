@@ -261,11 +261,14 @@ struct SnapshotProbeTests {
       ),
       // 管理收藏夹（体检 A1）：键盘列表 + 新建框；删掉一个后底栏「撤销 ⌘Z」在对话框下面也能点
       ("manage-groups", { m in m.dialog = .manageGroups }),
+      ("group-tabs-selected", { m in m.selectGroup(.group(group.id)) }),
+      ("group-tabs-types", { m in m.palette = .types }),
+      ("group-tabs-create", { m in m.dialog = .newGroup([]) }),
       (
         "manage-groups-deleted",
         { m in
           m.dialog = .manageGroups
-          m.toast = .undo("已删除收藏夹「旅行」")
+          m.toast = .undo("已删除分组「旅行」")
         }
       ),
       // 取消收藏后已超过保留天数（体检 A1）
@@ -338,6 +341,7 @@ struct SnapshotProbeTests {
           width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
         dark: dark, to: "\(out)/clip-update\(dark ? "-dark" : "").png")
     }
+    try clipboardCopyOnlySnapshots(model: model, out: out)
     // 一行文本的透镜：行标题已经原样显示全的不画第二遍、只剩元信息行（很短的富文本；有搜索词时标题也不摘录、
     // 照样从头显示）；标题列放不下的一行字（≤ 60 字）还是给两行高的正文（上面的 lens-short 是正文只有一行的）。
     // 另起一个小库，不动上面那批图
@@ -536,8 +540,12 @@ struct SnapshotProbeTests {
       // 私有接口在不在按固定的「都在」画（图不跟着机器变）
       case .dockPreview: AnyView(DockPreviewTab(missing: []))
       case .finderMenu: AnyView(FinderMenuTab(extensionEnabled: false))
+      case .defaultApps: AnyView(DefaultAppsTab(appliesTextPresetOnOpen: false))
+      case .appInput: AnyView(AppInputTab(previewSources: []))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
+      case .ocr:
+        AnyView(OCRTab(services: OCRServiceStore(services: [.builtin(.apple)])))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
       case .about: AnyView(AboutTab(updater: Updater()))
       }
@@ -1288,6 +1296,27 @@ struct SnapshotProbeTests {
         size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
     }
     Accent.shared.select(savedAccent, persists: false)
+  }
+
+  /// 画出仅复制模式的确认按钮与设置行，偏好放在临时域。
+  private func clipboardCopyOnlySnapshots(model: ClipboardPanelModel, out: String) throws {
+    let suite = "kitty-copy-only-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: suite))
+    defer { prefs.removePersistentDomain(forName: suite) }
+    prefs.set(true, forKey: Prefs.clipboardCopyOnConfirm)
+    model.reset()
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      try snapshot(
+        ClipboardPanelView(model: model).defaultAppStorage(prefs),
+        size: NSSize(
+          width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
+        dark: dark, to: "\(out)/clip-copy-only\(suffix).png")
+      try snapshot(
+        ClipboardTab(store: model.store).defaultAppStorage(prefs),
+        size: NSSize(width: 640, height: 870), dark: dark,
+        to: "\(out)/settings-clipboard-copy-only\(suffix).png")
+    }
   }
 
   /// 状态屏（PLAN §10）：一块 1200 × 800 的屏，底下垫着假桌面（不透明的两种样式看不到它）。单独一个测试函数：
@@ -4751,6 +4780,79 @@ struct SnapshotProbeTests {
           size: NSSize(width: 300, height: 150),
           dark: dark, to: "\(out)/finder-skip-form-\(state)\(dark ? "-dark" : "").png")
       }
+    }
+  }
+
+  /// 设置 › 默认应用的侧栏和列表，临时偏好域里放几个后缀，只读取系统的当前关联。
+  @Test(.enabled(if: directory != nil)) func defaultAppsSettings() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    let name = "kitty-snapshot-default-apps-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: name))
+    defer { prefs.removePersistentDomain(forName: name) }
+    prefs.set("pdf\n" + DefaultFileType.presetExtensions, forKey: Prefs.defaultAppExtensions)
+    let navigation = SettingsNavigation(defaults: nil)
+    navigation.page = .defaultApps
+    for dark in [false, true] {
+      let root = SettingsRoot(navigation: navigation) { _ in
+        AnyView(DefaultAppsTab(appliesTextPresetOnOpen: false))
+      } onboarding: {
+        AnyView(EmptyView())
+      }
+      try snapshot(
+        root.defaultAppStorage(prefs).environment(\.colorScheme, dark ? .dark : .light),
+        size: NSSize(width: 780, height: 600), dark: dark,
+        to: "\(out)/settings-default-apps\(dark ? "-dark" : "").png")
+    }
+  }
+
+  /// 同一个中文输入法按 App 分别显示中文和英文，使用临时偏好和固定输入源。
+  @Test(.enabled(if: directory != nil)) func appInputSettings() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    let name = "kitty-snapshot-app-input-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: name))
+    defer { prefs.removePersistentDomain(forName: name) }
+    let pinyin = AppInputSource(id: "sogou.pinyin", name: "搜狗拼音", modeOwner: "sogou")
+    var rules = AppInputRules("[]")
+    rules.save(.init(id: "sample.editor", name: "代码编辑器", sourceID: pinyin.id, mode: .english))
+    rules.save(.init(id: "sample.chat", name: "聊天应用", sourceID: pinyin.id, mode: .chinese))
+    prefs.set(rules.encoded(), forKey: Prefs.appInputRules)
+    prefs.set(true, forKey: Feature.appInput.prefsKey)
+    prefs.set(pinyin.id, forKey: Prefs.appInputDefaultSource)
+    prefs.set(AppInputRule.Mode.chinese.rawValue, forKey: Prefs.appInputDefaultMode)
+    let page = VStack(spacing: 0) {
+      PageHeader(page: .appInput)
+      AppInputTab(previewSources: [pinyin])
+    }
+    for dark in [false, true] {
+      try snapshot(
+        page.defaultAppStorage(prefs).environment(\.colorScheme, dark ? .dark : .light),
+        size: NSSize(width: 590, height: 600), dark: dark,
+        to: "\(out)/settings-app-input\(dark ? "-dark" : "").png")
+    }
+  }
+
+  /// 添加应用弹窗的选中状态，检查搜索、已有规则标记和中文输入法的模式选择。
+  @Test(.enabled(if: directory != nil)) func appInputRuleSheet() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    let pinyin = AppInputSource(id: "sogou.pinyin", name: "搜狗拼音", modeOwner: "sogou")
+    let abc = AppInputSource(id: "abc", name: "ABC", modeOwner: nil)
+    let notes = LauncherItem(
+      kind: .app, target: "/System/Applications/Notes.app", title: "备忘录", subtitle: "",
+      appBundleID: "com.apple.Notes")
+    let terminal = LauncherItem(
+      kind: .app, target: "/System/Applications/Utilities/Terminal.app", title: "终端", subtitle: "",
+      appBundleID: "com.apple.Terminal")
+    let sheet = AppInputRuleSheet(
+      sources: [abc, pinyin], initialSource: pinyin.id, configured: ["com.apple.Terminal"],
+      previewApps: [notes, terminal], previewSelection: notes.appBundleID, add: { _ in true })
+    for dark in [false, true] {
+      try snapshot(
+        sheet.environment(\.colorScheme, dark ? .dark : .light),
+        size: NSSize(width: 640, height: 440), dark: dark,
+        to: "\(out)/settings-app-input-add\(dark ? "-dark" : "").png")
     }
   }
 

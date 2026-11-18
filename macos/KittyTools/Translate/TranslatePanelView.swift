@@ -427,10 +427,15 @@ struct TranslatePanelView: View {
 
   // MARK: 结果
 
-  /// 提示 / 没有服务 / 还没翻译：共用的空状态（Shell/Style 的 EmptyState），四周留 20（标题长了折行时不贴边）。
+  /// 显示识别进度、空状态或翻译卡片。空状态四周留 20，防止标题折行贴边。
   /// 去设置的两个按钮是主按钮（BrandButtonStyle）：这时面板里该点的就是它
   @ViewBuilder private var results: some View {
-    if let notice = coordinator.notice {
+    if coordinator.isRecognizingScreenshot {
+      ProgressView("正在识别截图文字…")
+        .progressViewStyle(.circular)
+        .controlSize(.small)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    } else if let notice = coordinator.notice {
       EmptyState(symbol: "exclamationmark.bubble", title: notice) {
         // 只有授权类提示才给按钮（以前任何提示都挂「打开辅助功能设置」）
         if let permission = coordinator.noticePermission {
@@ -448,7 +453,10 @@ struct TranslatePanelView: View {
       EmptyState(symbol: "character.bubble", title: "划词、截图或输入后开始翻译") {
         VStack(spacing: 6) {
           ForEach(
-            [HotKeyAction.selectionTranslate, .screenshotTranslate, .inputTranslate], id: \.self
+            [
+              HotKeyAction.selectionTranslate, .screenshotTranslate, .imageTranslate,
+              .inputTranslate,
+            ], id: \.self
           ) {
             action in
             HStack {
@@ -542,8 +550,9 @@ struct TranslatePanelView: View {
   }
 }
 
-/// 28 pt 语言胶囊：语言名 +（自动且已知实际语言时）「自动」标签 + 10 pt 下拉箭头，间距 4；窄时语言名截断
-private struct LanguageCapsule: View {
+/// 28 pt 语言胶囊：语言名 +（自动且已知实际语言时）「自动」标签 + 10 pt 下拉箭头，间距 4；窄时语言名截断。
+/// OCR 浮窗的「服务」「语言」胶囊也用它（同一套皮肤）
+struct LanguageCapsule: View {
   let title: String
   let showsAutoTag: Bool
 

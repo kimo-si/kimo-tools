@@ -32,9 +32,9 @@ import CryptoKit
 import Foundation
 
 struct SettingsArchive: Codable, Equatable {
-  /// 能分开勾选的七类（顺序即导出、导入表单里的顺序）
+  /// 能分开勾选的八类（顺序即导出、导入表单里的顺序）
   enum Section: String, CaseIterable, Identifiable {
-    case preferences, hotkeys, services, engines, clips, vocabulary, notes
+    case preferences, hotkeys, services, ocrServices, engines, clips, vocabulary, notes
 
     var id: String { rawValue }
 
@@ -43,6 +43,7 @@ struct SettingsArchive: Codable, Equatable {
       case .preferences: "设置"
       case .hotkeys: "快捷键"
       case .services: "翻译服务"
+      case .ocrServices: "OCR 服务"
       case .engines: "网页搜索与快捷链接"
       case .clips: "片段与收藏"
       case .vocabulary: "生词本"
@@ -246,7 +247,7 @@ struct SettingsArchive: Codable, Equatable {
       case .notArchive: "这不是 Kitty Tools 导出的设置文件"
       case .newer: "这个文件来自更新版本的 Kitty Tools，先更新再导入"
       case .unreadable: "文件读不出来：可能被改动过，或者来自更新版本的 Kitty Tools"
-      case .wrongPassword: "密码不对（也可能是文件里的翻译服务被改动过）"
+      case .wrongPassword: "密码不对（也可能是文件里的服务配置被改动过）"
       }
     }
   }
@@ -257,7 +258,8 @@ struct SettingsArchive: Codable, Equatable {
   /// 连 0.5.0 起写的每日自动备份也是；不带便签的文件也写 2，不为它另留一条路）。
   /// 2026-11-05 翻译服务加了两种（系统翻译 apple、有道词典 youdaoDict）**没升**：旧版本整份解码，列表里有新种类时
   /// 报 unreadable（那句话本来就写了「或者来自更新版本」），不会悄悄丢东西；不含新种类的文件旧版本照常能读
-  static let currentFormat = 2
+  /// 3 = 增加独立的 OCR 服务及加密密钥；旧版明确提示更新，避免漏掉 OCR 或误报密码错误。
+  static let currentFormat = 3
   /// 文件再大就不读、不写（只有设置时几 KB；带上片段、收藏、生词本也很少过 1 MB，单条文字最大 5 MB）。
   /// ponytail: 读文件、解析、并进库都在主线程上，这个上限就是卡多久的上限——独立实测 32 MB 全是很短的片段（36 万条，
   /// 最坏情况）解析 0.6 s，同样大小的几条长文字 0.03 s；正常的文件是毫秒级。真有人的文件大到卡，再挪到主线程外
@@ -288,6 +290,8 @@ struct SettingsArchive: Codable, Equatable {
   var hotkeys: [String: HotKey?]?
   static let shotPrefix = "shot."
   var translateServices: [TranslateService]?
+  /// OCR 单独迁移；旧文件没有这一项时不动现有 OCR 配置。
+  var ocrServices: [OCRService]?
   var searchEngines: [SearchEngine]?
   /// 片段和文字类的收藏（新→旧）
   var clips: [Clip]?
@@ -309,6 +313,7 @@ struct SettingsArchive: Codable, Equatable {
     kinds[Prefs.reminders] = .reminders
     kinds[Prefs.launcherCommandAliases] = .text
     kinds[Prefs.launcherAppAliases] = .text
+    kinds[Prefs.appInputRules] = .text
     kinds[Prefs.launcherCommandsOff] = .text
     kinds[Prefs.launcherCommandHotKeys] = .text
     // 启动台的布局是用户的数据，不按字符串的 4096 字上限走，也不「文件里没有就删本机的」：单独收（capture / sanitized /
@@ -339,6 +344,7 @@ struct SettingsArchive: Codable, Equatable {
       case .preferences: preferences != nil
       case .hotkeys: hotkeys != nil
       case .services: translateServices != nil
+      case .ocrServices: ocrServices != nil
       case .engines: searchEngines != nil
       case .clips: clips != nil
       case .vocabulary: vocabulary != nil
@@ -357,7 +363,8 @@ struct SettingsArchive: Codable, Equatable {
   /// 没有默认值（默认成 [] 正是「有这一类、0 条」），调用方都得自己说清
   static func capture(
     from defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier,
-    services: [TranslateService], clips: [ClipItem] = [], groups: [ClipGroup] = [],
+    services: [TranslateService], ocrServices: [OCRService]? = nil,
+    clips: [ClipItem] = [], groups: [ClipGroup] = [],
     words: [HistoryStore.Entry] = [], notes: [Note]?, version: String = AboutTab.version,
     now: Date = .now
   ) -> SettingsArchive {
@@ -384,7 +391,7 @@ struct SettingsArchive: Codable, Equatable {
     }
     return SettingsArchive(
       version: version, exportedAt: now, preferences: preferences, hotkeys: hotkeys,
-      translateServices: services, searchEngines: engines(in: domain),
+      translateServices: services, ocrServices: ocrServices, searchEngines: engines(in: domain),
       clips: clips.compactMap { Clip($0, groups: groups) }, clipGroups: groups.map(\.name),
       vocabulary: words.filter(\.favorite).map(Word.init),
       notes: notes.map { $0.compactMap(NoteEntry.init) })
@@ -397,8 +404,9 @@ struct SettingsArchive: Codable, Equatable {
     if !sections.contains(.hotkeys) { kept.hotkeys = nil }
     if !sections.contains(.services) {
       kept.translateServices = nil
-      kept.secrets = nil
     }
+    if !sections.contains(.ocrServices) { kept.ocrServices = nil }
+    if sections.isDisjoint(with: [.services, .ocrServices]) { kept.secrets = nil }
     if !sections.contains(.engines) { kept.searchEngines = nil }
     if !sections.contains(.clips) {
       kept.clips = nil
@@ -459,7 +467,8 @@ struct SettingsArchive: Codable, Equatable {
 
   /// 这些服务存在钥匙串里的密钥：账户名 → 值。read 默认读钥匙串（单测传假的）
   static func secrets(
-    of services: [TranslateService], read: (String) -> String? = Keychain.get
+    of services: [TranslateService], ocrServices: [OCRService] = [],
+    read: (String) -> String? = Keychain.get
   ) -> [String: String] {
     var secrets: [String: String] = [:]
     for service in services {
@@ -467,6 +476,12 @@ struct SettingsArchive: Codable, Equatable {
         if let value = read(service.account(field.name)), !value.isEmpty {
           secrets[service.account(field.name)] = value
         }
+      }
+    }
+    for service in ocrServices {
+      for field in service.secretFields {
+        let account = service.account(field.name)
+        if let value = read(account), !value.isEmpty { secrets[account] = value }
       }
     }
     return secrets
@@ -501,11 +516,16 @@ struct SettingsArchive: Codable, Equatable {
   /// 和密钥一起校验的内容（不加密、只防改）：每个服务往哪发请求——id、种类、协议、地址、走不走 DeepLX，
   /// 每项写成「字节数:内容」连起来（分得清边界，写法不随系统版本变）
   private var routing: Data {
-    let fields = (translateServices ?? []).flatMap { service in
+    var fields = (translateServices ?? []).flatMap { service in
       [
         service.id, service.kind.rawValue, service.aiProtocol?.rawValue ?? "",
         service.baseURL ?? "", service.usesDeepLX == true ? "1" : "0",
       ]
+    }
+    // 旧文件没有 OCR 字段时保持原校验字节不变，已有加密备份继续可读。
+    if let ocrServices {
+      fields +=
+        ["ocrServices"] + ocrServices.flatMap { [$0.id, $0.kind.rawValue, $0.region ?? ""] }
     }
     return Data(fields.map { "\($0.utf8.count):\($0)" }.joined().utf8)
   }
@@ -514,6 +534,14 @@ struct SettingsArchive: Codable, Equatable {
   func accepted(_ secrets: [String: String]) -> [String: String] {
     var accepted: [String: String] = [:]
     for service in translateServices ?? [] {
+      for field in service.secretFields {
+        let account = service.account(field.name)
+        if let value = secrets[account], !value.isEmpty, value.count <= 4096 {
+          accepted[account] = value
+        }
+      }
+    }
+    for service in ocrServices ?? [] {
       for field in service.secretFields {
         let account = service.account(field.name)
         if let value = secrets[account], !value.isEmpty, value.count <= 4096 {
@@ -634,6 +662,7 @@ struct SettingsArchive: Codable, Equatable {
         return valid && fits && ids.insert(service.id).inserted
       }
     }
+    clean.ocrServices = ocrServices.map(OCRService.sanitized)
     clean.searchEngines = searchEngines.map { engines in
       var ids: Set<String> = []
       return engines.prefix(500).filter { engine in
@@ -696,7 +725,7 @@ struct SettingsArchive: Codable, Equatable {
         return note
       }
     }
-    if translateServices == nil { clean.secrets = nil }
+    if translateServices == nil && ocrServices == nil { clean.secrets = nil }
     return clean
   }
 
@@ -778,6 +807,7 @@ struct SettingsArchive: Codable, Equatable {
   @discardableResult
   func install(
     _ sections: Set<Section>, password: String = "", services: TranslateServiceStore,
+    ocrStore: OCRServiceStore? = nil,
     clipboard: ClipboardStore? = nil, history: HistoryStore? = nil,
     noteStore: NoteStore? = nil, to defaults: UserDefaults = .standard,
     domainName: String? = Bundle.main.bundleIdentifier,
@@ -785,16 +815,22 @@ struct SettingsArchive: Codable, Equatable {
     beforeWriting: () throws -> Void = {}
   ) throws -> Outcome {
     let importsServices = sections.contains(.services) && translateServices != nil
+    let importsOCR = sections.contains(.ocrServices) && ocrServices != nil && ocrStore != nil
     var unsealed: [String: String] = [:]
-    if importsServices, secrets != nil, !password.isEmpty {
-      unsealed = accepted(try unseal(password: password))
+    if importsServices || importsOCR, secrets != nil, !password.isEmpty {
+      var selected = sections
+      if !importsOCR { selected.remove(.ocrServices) }
+      unsealed = keeping(selected).accepted(try unseal(password: password))
     }
     try beforeWriting()
     apply(sections, to: defaults, domainName: domainName)
     if importsServices, let translateServices {
       services.services = Self.merge(translateServices, into: services.services)
-      for (account, value) in unsealed { store(account, value) }
     }
+    if importsOCR, let ocrServices, let ocrStore {
+      ocrStore.services = Self.merge(ocrServices, into: ocrStore.services)
+    }
+    for (account, value) in unsealed { store(account, value) }
     var outcome = Outcome(secrets: unsealed.count)
     if sections.contains(.clips), let clips, let clipboard {
       (outcome.clipsAdded, outcome.clipsUpdated) = clipboard.adopt(clips, groups: clipGroups ?? [])

@@ -17,11 +17,14 @@ struct HomeTests {
     var state = LauncherItem.ActionState(statusPresets: StatusPreset.builtIn)
     state.features = all
     let sections = Home.sections(state: state, keys: [.screenshot: "⌥A"])
-    #expect(sections.map(\.title) == ["剪贴板与启动器", "翻译", "截图与录制", "插件"])
+    #expect(sections.map(\.title) == ["剪贴板与启动器", "翻译", nil, "截图与录制", "插件"])
     let tiles = sections.flatMap(\.tiles)
     #expect(!tiles.contains { $0.target == .action(.home) || $0.target == .action(.pinClipboard) })
     #expect(sections[0].tiles.map(\.target) == [.action(.clipboard), .action(.launcher)])
-    #expect(sections[1].tiles.last?.target == .action(.screenshotTranslate))
+    #expect(
+      sections[1].tiles.suffix(2).map(\.target) == [
+        .action(.screenshotTranslate), .action(.imageTranslate),
+      ])
     #expect(
       sections.last?.tiles.map(\.target) == [
         .action(.noteCapture), .action(.noteNew), .action(.noteAll), .action(.reminderNew),
@@ -48,7 +51,7 @@ struct HomeTests {
   }
 
   /// 开关开着、有钉图、在录屏时：格子跟着现在的样子（开关开着也不出现）
-  @Test func sectionsFollowState() {
+  @Test func sectionsFollowState() throws {
     var state = LauncherItem.ActionState(
       recordingPaused: true, copyToTranslate: true, pinsHidden: true, recording: .screenRecord)
     state.features = all
@@ -59,7 +62,11 @@ struct HomeTests {
       })
     #expect(tiles.first { $0.target == .action(.screenRecord) }?.title == "停止录屏")
     // 钉图两项（动作）接在截图那一节末尾
-    let shot = Home.sections(state: state, keys: [:])[2].tiles
+    let shot = try #require(
+      Home.sections(state: state, keys: [:]).first { section in
+        section.tiles.contains { $0.target == .action(.screenshot) }
+      }
+    ).tiles
     #expect(shot.suffix(2).map(\.target) == [.extra(.pinsToggle), .extra(.pinsClose)])
     #expect(shot.suffix(2).first?.title == "显示全部钉图")
     // 设置、关于、检查更新、退出不是格子（底栏 / 右键菜单里）
@@ -81,14 +88,16 @@ struct HomeTests {
     state.features = all.subtracting([.screenshot])
     #expect(Home.sections(state: state, keys: [:]).contains { $0.title == "录制" })
 
-    // 新装默认（四个功能）：三节，没有「插件」；再添加一个提醒：最后多一节「插件」，里面一格
+    // 新装默认的截图 OCR 独占一格；再添加一个提醒，末尾多一节「插件」
     state.features = Feature.core
-    #expect(Home.sections(state: state, keys: [:]).map(\.title) == ["剪贴板与启动器", "翻译", "截图"])
+    let core = Home.sections(state: state, keys: [:])
+    #expect(core.map(\.title) == ["剪贴板与启动器", "翻译", nil, "截图"])
+    #expect(core[2].tiles.map(\.target) == [.action(.screenshotOCR)])
     state.features = Feature.core.union([.reminders])
     let one = Home.sections(state: state, keys: [:])
     #expect(
-      one.count == 4 && one[3].title == Home.pluginsTitle
-        && one[3].tiles.map(\.target) == [.action(.reminderNew)])
+      one.count == 5 && one.last?.title == Home.pluginsTitle
+        && one.last?.tiles.map(\.target) == [.action(.reminderNew)])
 
     // 只剩刘海岛插件时只有它那一格；全关了一格都没有（打开刘海岛 2026-11-13 起归刘海岛插件）
     state.features = [.island]
@@ -117,13 +126,13 @@ struct HomeTests {
     var state = LauncherItem.ActionState()
     state.features = all
     let sections = Home.sections(state: state, keys: [:])
-    // 2 / 4 / 7 / 7（截图与录制 7 格折成 5 + 2；插件 7 格折成 5 + 2：便签三格、新建提醒、状态屏、启动台、刘海岛）
-    #expect(Home.rows(sections).map(\.count) == [2, 4, 5, 2, 5, 2])
-    #expect(Home.rows(sections).flatMap { $0 } == Array(0..<20))
-    let rows: CGFloat = 6
+    // 翻译 5 格、截图 OCR 单独一格；截图与录制和插件各 7 格。
+    #expect(Home.rows(sections).map(\.count) == [2, 5, 1, 5, 2, 5, 2])
+    #expect(Home.rows(sections).flatMap { $0 } == Array(0..<22))
+    let rows: CGFloat = 7
     let expected =
       Home.top + Home.bottom + 4 * Home.titleHeight + rows * Home.tile.height
-      + (rows - 4) * Home.gap + Home.barHeight
+      + (rows - 5) * Home.gap + Home.untitledGap + Home.barHeight
     #expect(Home.height(sections, offCount: 0) == expected)
     #expect(Home.height(sections, offCount: 2) == expected + Home.noteHeight)
     #expect(Home.width == 2 * Home.inset + 5 * Home.tile.width + 4 * Home.gap)

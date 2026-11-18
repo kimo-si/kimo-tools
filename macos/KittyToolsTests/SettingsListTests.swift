@@ -8,6 +8,7 @@ import AppKit
 import ServiceManagement
 import SwiftUI
 import Testing
+import UniformTypeIdentifiers
 
 @testable import KittyTools
 
@@ -39,8 +40,11 @@ struct SettingsListTests {
     let pages = SettingsPage.allCases
     #expect(
       pages == [
-        .general, .clipboard, .launcher, .translate, .screenshot, .record, .notes, .reminders,
-        .statusScreen, .launchpad, .dockPreview, .finderMenu, .island, .hotkeys, .about,
+        .general, .clipboard, .launcher, .translate, .ocr, .screenshot, .record,
+        .notes, .reminders,
+        .statusScreen, .launchpad, .dockPreview, .finderMenu, .defaultApps, .appInput, .island,
+        .hotkeys,
+        .about,
       ])
     // 分组盖住每一页、和 allCases 同序
     #expect(SettingsPage.groups.flatMap { $0 } == pages)
@@ -48,8 +52,12 @@ struct SettingsListTests {
     #expect(
       SettingsPage.sidebar(SettingsPage.visible(launchpad: false), off: []).map(\.pages)
         == [
-          [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
-          [.notes, .reminders, .statusScreen, .dockPreview, .finderMenu, .island],
+          [.general], [.clipboard, .launcher, .translate, .ocr],
+          [.screenshot, .record],
+          [
+            .notes, .reminders, .statusScreen, .dockPreview, .finderMenu, .defaultApps, .appInput,
+            .island,
+          ],
           [.hotkeys, .about],
         ])
     #expect(
@@ -59,8 +67,11 @@ struct SettingsListTests {
     let closed = SettingsPage.sidebar(SettingsPage.allCases, off: [.translate, .record])
     #expect(
       closed.map(\.pages) == [
-        [.general], [.clipboard, .launcher], [.screenshot],
-        [.notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .island],
+        [.general], [.clipboard, .launcher, .ocr], [.screenshot],
+        [
+          .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .defaultApps,
+          .appInput, .island,
+        ],
         [.hotkeys, .about], [.translate, .record],
       ])
     #expect(
@@ -82,8 +93,42 @@ struct SettingsListTests {
         && SettingsPage.hotkeys.feature == nil)
     // 插件组就是全部插件（按 Feature 的先后）
     #expect(SettingsPage.groups[3].compactMap(\.feature) == Feature.allCases.filter(\.isPlugin))
-    let sections = HotKeyAction.sections.map(\.title)
-    #expect(sections.firstIndex(of: "翻译")! < sections.firstIndex(of: "截图与录制")!)
+    let sections = HotKeyAction.visibleSections(enabled: Set(Feature.allCases)).map(\.title)
+    let translate = sections.firstIndex(of: "翻译")
+    let ocr = sections.firstIndex(of: "OCR")
+    let capture = sections.firstIndex(of: "截图与录制")
+    #expect(translate.map { $0 + 1 } == ocr && ocr.map { $0 + 1 } == capture)
+  }
+
+  /// 扩展名大小写与前导点统一；别名保留原名，并解析为同一个系统类型。
+  @Test func defaultAppExtensionsResolveToFileTypes() throws {
+    let rows = DefaultFileType.list(" .PDF \npdf\nJPG\njpeg\n../bad")
+    #expect(rows.map(\.suffix) == ["pdf", "jpg", "jpeg"])
+    #expect(rows.first?.type.identifier == "com.adobe.pdf")
+    let jpg = try #require(DefaultFileType("jpg"))
+    #expect(jpg.type == DefaultFileType(".JPEG")?.type)
+    #expect(DefaultFileType("some/path.png") == nil)
+    #expect(SettingsPage.defaultApps.matches("文件关联"))
+  }
+
+  /// 升级预置文本后缀时保留自定义项。用户之后移除的项目不会再次补回，别名只应用一次。
+  @Test func defaultAppsPresetMergesOnceAndDeduplicatesTypes() throws {
+    let name = "kitty-test-default-apps-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: name))
+    defer { prefs.removePersistentDomain(forName: name) }
+    prefs.set("pdf\nmd", forKey: Prefs.defaultAppExtensions)
+    Prefs.migrate(prefs, domainName: name)
+    let saved = try #require(prefs.string(forKey: Prefs.defaultAppExtensions))
+    let rows = DefaultFileType.list(saved)
+    #expect(rows.prefix(2).map(\.suffix) == ["pdf", "md"])
+    let targets = DefaultFileType.presetTargets(in: rows)
+    #expect(targets.map(\.suffix).contains("txt"))
+    #expect(!targets.map(\.suffix).contains("pdf"))
+    #expect(targets.filter { $0.type == DefaultFileType("md")?.type }.count == 1)
+    #expect(targets.filter { $0.type == DefaultFileType("yaml")?.type }.count == 1)
+    prefs.set("pdf", forKey: Prefs.defaultAppExtensions)
+    Prefs.migrate(prefs, domainName: name)
+    #expect(prefs.string(forKey: Prefs.defaultAppExtensions) == "pdf")
   }
 
   /// 侧栏搜索按改名后的叫法也找得到：启动器的「常用」「收藏」，翻译的「浮窗位置」「清空」，截图的「PNG」「对拷线」

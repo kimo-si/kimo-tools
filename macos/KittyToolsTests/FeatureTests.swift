@@ -30,7 +30,7 @@ struct FeatureTests {
     for feature in Feature.allCases {
       #expect(
         HotKeyAction.allCases.contains { $0.feature == feature }
-          == ![.dockPreview, .finderMenu].contains(feature))
+          == ![.defaultApps, .dockPreview, .finderMenu, .appInput].contains(feature))
       #expect(feature.page.rawValue == feature.rawValue)
     }
     #expect(HotKeyAction.screenshotTranslate.feature == .translate)
@@ -164,7 +164,7 @@ struct FeatureTests {
     Feature.seedNewInstall(defaults, domainName: suite)
     #expect(
       Feature.allCases.filter { stored()[$0.prefsKey] as? Bool == true }
-        == [.clipboard, .launcher, .translate, .screenshot, .notes])
+        == [.clipboard, .launcher, .translate, .ocr, .screenshot, .notes])
     #expect(Feature.allCases.allSatisfy { stored()[$0.prefsKey] is Bool })
     // 再来一次不变
     defaults.set(false, forKey: Feature.clipboard.prefsKey)
@@ -210,9 +210,9 @@ struct FeatureTests {
   /// 新做的插件默认不添加（2026-11-12 拍板 A1）；2026-11-13 从功能转过来的插件照旧用原来的默认值、刘海岛默认添加着（P2：
   /// 没拨过开关的老用户升级上来便签、提醒、点刘海都还在，0.8.x 导出的文件里没有这一项也不会把它们关掉）
   @Test func switchesAreExportedSettings() {
-    #expect(Feature.allCases.filter { !$0.defaultOn } == [.dockPreview, .finderMenu])
+    #expect(Feature.allCases.filter { !$0.defaultOn } == [.dockPreview, .finderMenu, .appInput])
     #expect(
-      [Feature.notes, .reminders, .statusScreen, .launchpad, .island].allSatisfy {
+      [Feature.notes, .reminders, .statusScreen, .launchpad, .defaultApps, .island].allSatisfy {
         $0.isPlugin && $0.defaultOn
       })
     #expect(
@@ -241,7 +241,7 @@ struct FeatureTests {
     // 功能剩核心五个（2026-11-13 插件化 P1）
     #expect(
       Feature.allCases.filter { !$0.isPlugin } == [
-        .clipboard, .launcher, .translate, .screenshot, .record,
+        .clipboard, .launcher, .translate, .ocr, .screenshot, .record,
       ])
     // 搜插件的名字：没添加时落到通用页（「功能 ›」下面就是它的卡），添加了停在它自己那页
     #expect(SettingsPage.page(for: "访达右键", current: .about, hidden: [.finderMenu]) == .general)
@@ -249,5 +249,10 @@ struct FeatureTests {
     // 添加了之后搜它的词停在它自己那页，不落到通用页
     #expect(SettingsPage.matching("访达右键", hidden: []) == [.finderMenu])
     #expect(SettingsPage.finderMenu.groupTitle == "插件")
+    #expect(SettingsPage.defaultApps.groupTitle == "插件")
+    #expect(SettingsPage.page(for: "默认应用", current: .about, hidden: [.defaultApps]) == .general)
+    #expect(SettingsPage.matching("默认应用", hidden: []) == [.defaultApps])
+    let offers = LauncherModel.pluginOffers(for: "默认应用", added: [])
+    #expect(offers.map(\.title) == ["添加「默认应用」插件"])
   }
 }

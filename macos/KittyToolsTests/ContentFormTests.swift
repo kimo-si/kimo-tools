@@ -102,8 +102,8 @@ struct ContentFormTests {
     #expect(Lens.bodyHeight(for: text("git status\n"), form: nil) == 0)
     #expect(Lens.height(for: text("一句短话"), form: nil) == 70)
     // VoiceOver 也不把同一句话念两遍：没有正文区的只说类型
-    #expect(Lens.accessibilityValue(for: text("一句短话"), form: nil) == "文本")
-    #expect(Lens.accessibilityValue(for: text("两行\n文本"), form: nil) == "文本 · 两行\n文本")
+    #expect(Lens.accessibilityValue(for: text("一句短话"), form: nil, height: 70) == "文本")
+    #expect(Lens.accessibilityValue(for: text("两行\n文本"), form: nil, height: 160) == "文本 · 两行\n文本")
     // 一行但标题列放不下、或者标题把连续空白压成了一个空格（不是原样）：还是两行高的正文
     #expect(Lens.bodyHeight(for: text(String(repeating: "长", count: 60)), form: nil) == 36)
     #expect(Lens.bodyHeight(for: text("a\tb"), form: nil) == 36)
@@ -119,8 +119,7 @@ struct ContentFormTests {
     #expect(Lens.reserve == 198 - ClipRowView.height)
   }
 
-  /// 行标题有没有把整条文本原样显示全（透镜要不要正文区）：只看条目自己的数据。标题列最窄 352 pt
-  /// （右侧文字那一格不管字多短都占满 220），带格式 / 片段 / 收藏标记再各占一点（没收藏时星标连间距都不占）
+  /// 默认面板宽度给右侧文字预留 120 pt，剩下的空间允许显示全文。各标记和分组胶囊另计宽度。
   @Test func rowShowsWholeText() {
     func text(_ count: Int, _ change: (inout ClipItem) -> Void = { _ in }) -> ClipItem {
       text(String(repeating: "字", count: count), change)  // 13 pt 下一个字约 12.9 pt 宽
@@ -132,13 +131,13 @@ struct ContentFormTests {
       return item
     }
     #expect(ClipRowView.showsWholeText(text("大合唱练歌") { $0.richType = .html }))
-    #expect(ClipRowView.showsWholeText(text(27)))
-    #expect(!ClipRowView.showsWholeText(text(28)))
-    // 收藏的少一个字：星标连它前面的间距占掉 26
-    #expect(ClipRowView.showsWholeText(text(25) { $0.favorite = true }))
-    #expect(!ClipRowView.showsWholeText(text(26) { $0.favorite = true }))
+    #expect(ClipRowView.showsWholeText(text(35)))
+    #expect(!ClipRowView.showsWholeText(text(36)))
+    // 星标连它前面的间距占掉 26
+    #expect(ClipRowView.showsWholeText(text(33) { $0.favorite = true }))
+    #expect(!ClipRowView.showsWholeText(text(34) { $0.favorite = true }))
     // 备注、来源名多长都一样；三个标记一共占掉 86
-    #expect(ClipRowView.showsWholeText(text(27) { $0.note = String(repeating: "备注", count: 20) }))
+    #expect(ClipRowView.showsWholeText(text(35) { $0.note = String(repeating: "备注", count: 20) }))
     func marked(_ count: Int) -> ClipItem {
       text(count) {
         $0.richType = .rtf
@@ -146,8 +145,8 @@ struct ContentFormTests {
         $0.favorite = true
       }
     }
-    #expect(ClipRowView.showsWholeText(marked(20)))
-    #expect(!ClipRowView.showsWholeText(marked(21)))
+    #expect(ClipRowView.showsWholeText(marked(28)))
+    #expect(!ClipRowView.showsWholeText(marked(29)))
     // 不是一行、标题不是原样、不是文本
     #expect(!ClipRowView.showsWholeText(text("两行\n文本")))
     #expect(!ClipRowView.showsWholeText(text("a  b")))

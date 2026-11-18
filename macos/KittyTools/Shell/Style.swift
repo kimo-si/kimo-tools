@@ -223,6 +223,9 @@ enum Style {
       light: NSColor(srgbRed: 0.33, green: 0.47, blue: 0.62, alpha: 1),
       dark: NSColor(srgbRed: 0.47, green: 0.61, blue: 0.76, alpha: 1))
 
+    /// OCR（2026-11-17）：青（从图里取字），和翻译的绿、截图的粉都分得开
+    static let ocr = Color(nsColor: .systemTeal)
+
     /// 种类色块上的符号色：白；便签的黄上白色只有约 1.5:1，换成 black 0.85（同强调色选黄时 onBrand 的做法）
     static func onTile(_ color: Color) -> Color { color == notes ? .black.opacity(0.85) : .white }
   }

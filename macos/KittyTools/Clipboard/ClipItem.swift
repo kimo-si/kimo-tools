@@ -61,6 +61,8 @@ struct ClipItem: Identifiable, Hashable, Sendable {
 
 /// 命名收藏夹（库里仍叫 clip_groups）：收藏 = 默认收藏夹，这些是用户建的（体检 A1）
 struct ClipGroup: Identifiable, Hashable, Sendable {
+  /// 全部历史入口的保留名称。
+  nonisolated static let allTitle = "ALL"
   /// 名字最多几个字（超出时输入框拦住并显示「24/24」，不悄悄截断）
   static let maxName = 24
 

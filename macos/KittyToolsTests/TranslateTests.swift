@@ -294,9 +294,10 @@ struct HistoryStoreTests {
     // 打开刘海岛（2026-10-26，不设默认键）再接在后面，晾衣绳（第十族，2026-10-26，不设默认键）接在后面，
     // 打开主界面（2026-10-29，不设默认键）接在后面，新建提醒（2026-11-04，不设默认键）接在最后
     #expect(
-      Array(HotKeyAction.allCases.suffix(14)) == [
+      Array(HotKeyAction.allCases.suffix(16)) == [
         .translateReplace, .screenRecord, .audioRecord, .pinClipboard, .statusScreen, .noteCapture,
         .noteNew, .noteAll, .launchpad, .shotHistory, .island, .clothesline, .home, .reminderNew,
+        .screenshotOCR, .imageTranslate,
       ])
     #expect(HotKeyAction.reminderNew.defaultHotKey == nil)
     #expect(HotKeyAction.home.defaultHotKey == nil)
@@ -969,6 +970,74 @@ struct TranslateBatch4Tests {
     coordinator.translate("New sentence to translate", fromCopy: true)
     for _ in 0..<200 { await Task.yield() }
     #expect(coordinator.cards.map(\.state) == [.done("新译文")])
+  }
+
+  /// 识字慢时浮窗有进度可画；拿到原文后每段增量都能在请求结束前显示。
+  @Test func screenshotRecognitionHandsOffToStreamingTranslation() async throws {
+    var service = TranslateService.newAI()
+    service.isEnabled = true
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: [service]),
+      history: try HistoryStore(db: Database(path: ":memory:")))
+    let (recognition, recognized) = AsyncStream<String>.makeStream()
+    let (stream, chunks) = AsyncThrowingStream<String, Error>.makeStream()
+    var requestedSource: String?
+    coordinator.stream = { _, request in
+      requestedSource = request.text
+      return stream
+    }
+    defer {
+      coordinator.cancel()
+      recognized.finish()
+      chunks.finish()
+    }
+
+    coordinator.recognizeScreenshot {
+      var iterator = recognition.makeAsyncIterator()
+      return await iterator.next(isolation: MainActor.shared)
+    }
+    #expect(coordinator.isRecognizingScreenshot)
+    #expect(coordinator.cards.isEmpty && requestedSource == nil)
+    coordinator.start()
+    #expect(coordinator.isRecognizingScreenshot)
+
+    let original = "Hello from a screenshot"
+    recognized.yield(original)
+    for _ in 0..<100 where requestedSource == nil { await Task.yield() }
+    #expect(coordinator.sourceText == original && requestedSource == original)
+    #expect(!coordinator.isRecognizingScreenshot)
+    #expect(coordinator.cards.first?.state == .waiting)
+
+    chunks.yield("你好")
+    for _ in 0..<100 where coordinator.cards.first?.state == .waiting { await Task.yield() }
+    #expect(coordinator.cards.first?.state == .running("你好"))
+  }
+
+  /// 关闭或编辑浮窗后，即使已经开始的识别仍然交回结果，也不会覆盖原文或请求翻译。
+  @Test(arguments: [false, true])
+  func cancelledScreenshotRecognitionDoesNotTranslate(editing: Bool) async throws {
+    var service = TranslateService.newAI()
+    service.isEnabled = true
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: [service]),
+      history: try HistoryStore(db: Database(path: ":memory:")))
+    var completeRecognition: CheckedContinuation<String?, Never>?
+    coordinator.stream = { _, _ in
+      Issue.record("已经作废的截图不应请求翻译")
+      return AsyncThrowingStream { $0.finish() }
+    }
+    defer { coordinator.cancel() }
+    coordinator.recognizeScreenshot {
+      await withCheckedContinuation { completeRecognition = $0 }
+    }
+    for _ in 0..<100 where completeRecognition == nil { await Task.yield() }
+    let complete = try #require(completeRecognition)
+
+    if editing { coordinator.sourceText = "手动输入" } else { coordinator.cancel() }
+    complete.resume(returning: "Old screenshot text")
+    for _ in 0..<20 { await Task.yield() }
+    #expect(coordinator.sourceText == (editing ? "手动输入" : ""))
+    #expect(!coordinator.isRecognizingScreenshot && coordinator.cards.isEmpty)
   }
 
   /// 主结果（第三轮体检 U1）：按顺序第一个翻成功的；前面的还在跑就等，出错 / 截断 / 中断的跳过

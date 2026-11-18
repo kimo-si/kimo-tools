@@ -41,7 +41,10 @@ enum ListWindow {
   /// 要画的项（下标区间，二分）。tops：每一项的顶（列表坐标），比项数多一个，最后一个是总高；band：可见区的顶
   /// （滚动内容坐标）落在第几段；inset：列表顶上的内缩（滚动内容坐标 − inset = 列表坐标）；viewport：可见区最高多高。
   /// 列表一下子变短（删了一批）时滚动位置下一帧才夹回来：先按最后一段画，别空一帧
-  static func range(_ tops: [CGFloat], band: Int, inset: CGFloat, viewport: CGFloat) -> Range<Int> {
+  static func range(
+    _ tops: [CGFloat], band: Int, inset: CGFloat, viewport: CGFloat,
+    overscan: CGFloat = ListWindow.overscan
+  ) -> Range<Int> {
     let count = max(tops.count - 1, 0)
     let total = tops.last ?? 0
     let top = CGFloat(min(band, Int(max(total - 1, 0) / bandHeight))) * bandHeight - inset

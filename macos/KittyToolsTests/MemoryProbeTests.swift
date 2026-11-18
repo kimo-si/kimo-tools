@@ -799,6 +799,8 @@ private final class Probe {
       let root = SettingsRoot(navigation: navigation) { page in
         switch page {
         case .general: AnyView(GeneralTab())
+        case .defaultApps: AnyView(DefaultAppsTab(appliesTextPresetOnOpen: false))
+        case .appInput: AnyView(AppInputTab())
         case .island: AnyView(IslandTab())
         case .clipboard: AnyView(ClipboardTab(store: store))
         case .launcher: AnyView(EmptyView())
@@ -813,6 +815,7 @@ private final class Probe {
         case .finderMenu: AnyView(FinderMenuTab(extensionEnabled: false))
         case .translate:
           AnyView(TranslateTab(services: services, history: history, speaker: speaker))
+        case .ocr: AnyView(EmptyView())
         case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
         case .about: AnyView(AboutTab(updater: Updater()))
         }

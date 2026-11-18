@@ -686,7 +686,7 @@ struct ScreenshotOverlayTests {
     }
     let gauge = Gauge()
     var finished: [Int] = []
-    let results = try await AppDelegate.inParallel(
+    let results = try await ScreenshotTranslation.inParallel(
       8, limit: 3, finished: { finished.append($0) },
       work: { index in
         await gauge.enter()
@@ -706,7 +706,7 @@ struct ScreenshotOverlayTests {
     }
     let calls = Calls()
     let task = Task {
-      try await AppDelegate.inParallel(10, limit: 3) { (index: Int) -> Int in
+      try await ScreenshotTranslation.inParallel(10, limit: 3) { (index: Int) -> Int in
         await calls.add()
         try await Task.sleep(for: .seconds(30))
         return index
@@ -719,7 +719,7 @@ struct ScreenshotOverlayTests {
     // 有一个失败：整个抛出来
     struct Failure: Error {}
     await #expect(throws: Failure.self) {
-      _ = try await AppDelegate.inParallel(5, limit: 3) { (index: Int) -> Int in
+      _ = try await ScreenshotTranslation.inParallel(5, limit: 3) { (index: Int) -> Int in
         if index == 2 { throw Failure() }
         return index
       }
@@ -828,8 +828,10 @@ struct ScreenshotOverlayTests {
     }
   }
 
-  /// 图上留原文的段（这里是纯符号段）一个像素都不动：右上方贴着的一条，正好在左边那段放宽的译文上方、去字的边扩得到的地方
-  @Test func renderLeavesKeptParagraphsUntouched() async throws {
+  /// 纯符号和翻译失败的段都不能擦掉：旁边成功段的去字范围扩出来时，逐像素保护原文。
+  @Test(arguments: [false, true]) func renderLeavesKeptParagraphsUntouched(failed: Bool)
+    async throws
+  {
     let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
     let context = try #require(
       CGContext(
@@ -844,8 +846,11 @@ struct ScreenshotOverlayTests {
       image,
       segments: [
         segment("一行原文", box: CGRect(x: 20, y: 40, width: 200, height: 20), lineHeight: 20),
-        segment("★★★", box: CGRect(x: 230, y: 62, width: 40, height: 10), lineHeight: 10),
-      ], translations: ["The translated line is longer and wraps onto a second", "★★★"])
+        segment(
+          failed ? "Failed" : "★★★", box: CGRect(x: 230, y: 62, width: 40, height: 10),
+          lineHeight: 10),
+      ],
+      translations: ["The translated line is longer and wraps onto a second", failed ? "" : "★★★"])
     let composed = try #require(outcome.image)
     let pixels = try Self.pixels(composed)
     for (x, y) in [(232, 62), (250, 63), (268, 64), (250, 70)] {

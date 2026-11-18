@@ -61,6 +61,16 @@ import Foundation
   private var pending = false
   private var applying = false
 
+  /// 本机版本同步额外包含访达开关和 OCR 服务配置。
+  private var sharesEditions: Bool {
+    NoteSyncDisk.isEditionsFolder(defaults.string(forKey: Prefs.notesSyncFolder))
+  }
+
+  /// 访达开关允许同一台 Mac 的两个版本同步，macOS 对扩展的授权仍按版本管理。
+  private func canSync(_ key: String) -> Bool {
+    !Self.localKeys.contains(key) || (sharesEditions && key == Feature.finderMenu.prefsKey)
+  }
+
   /// domainName：持久域的名字（只同步改过的：持久域里有的）；applied：落下去之后让运行中的东西跟上
   init(
     defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier,
@@ -91,7 +101,7 @@ import Foundation
   private func ownValues() -> [String: String] {
     let domain = domainName.flatMap(defaults.persistentDomain(forName:)) ?? [:]
     var values: [String: String] = [:]
-    for (key, kind) in SettingsArchive.kinds where !Self.localKeys.contains(key) {
+    for (key, kind) in SettingsArchive.kinds where canSync(key) {
       guard let value = kind.value(of: domain[key]) else { continue }
       let text: String?
       if let cached = encodedPrefs[key], Self.same(cached.value, value) {
@@ -102,6 +112,11 @@ import Foundation
         encodedPrefs[key] = (value, text)
       }
       if let text { values[Self.prefPrefix + key] = text }
+    }
+    if sharesEditions, let data = domain[Prefs.ocrServices] as? Data,
+      let services = try? JSONDecoder().decode([OCRService].self, from: data)
+    {
+      values[Self.prefPrefix + Prefs.ocrServices] = Self.encoded(services)
     }
     for action in HotKeyAction.allCases {
       guard let data = domain[action.prefsKey] as? Data else { continue }
@@ -138,7 +153,10 @@ import Foundation
   }
 
   private func passthrough() -> [String: String] {
-    (defaults.dictionary(forKey: Self.passthroughKey) ?? [:]).compactMapValues { $0 as? String }
+    let passed = (defaults.dictionary(forKey: Self.passthroughKey) ?? [:])
+      .compactMapValues { $0 as? String }
+    guard !sharesEditions else { return passed }
+    return passed.filter { $0.key != Self.prefPrefix + Prefs.ocrServices }
   }
 
   // MARK: 改的时刻
@@ -208,7 +226,7 @@ import Foundation
     var hotkeysChanged = false
     for (id, value) in changes {
       // 认得、落得下的写进设置（同时清掉这一项的透传）；别的原样存进透传
-      if let write = Self.write(for: id, value) {
+      if let write = write(for: id, value) {
         writes.append(write)
         passed[id] = nil
         hotkeysChanged = hotkeysChanged || id.hasPrefix(Self.hotkeyPrefix)
@@ -241,18 +259,20 @@ import Foundation
   }
 
   /// 一项要写进偏好的什么（nil 值 = 删掉这个键）；这一版不认识、留在本机、落不下的给 nil（透传）
-  private static func write(for id: String, _ value: String?) -> (key: String, value: Any?)? {
-    if id.hasPrefix(prefPrefix) {
-      let key = String(id.dropFirst(prefPrefix.count))
-      guard let kind = SettingsArchive.kinds[key], !localKeys.contains(key) else { return nil }
+  private func write(for id: String, _ value: String?) -> (key: String, value: Any?)? {
+    if id.hasPrefix(Self.prefPrefix) {
+      let key = String(id.dropFirst(Self.prefPrefix.count))
+      if key == Prefs.ocrServices { return ocrWrite(value) }
+      guard let kind = SettingsArchive.kinds[key], canSync(key) else { return nil }
       guard let value else { return (key, nil) }
       guard let decoded = SyncRecords.decodeExact(SettingsArchive.Value.self, from: value),
         let plist = kind.plist(decoded)
       else { return nil }
       return (key, plist)
     }
-    if id.hasPrefix(hotkeyPrefix) {
-      guard let action = HotKeyAction(rawValue: String(id.dropFirst(hotkeyPrefix.count))) else {
+    if id.hasPrefix(Self.hotkeyPrefix) {
+      guard let action = HotKeyAction(rawValue: String(id.dropFirst(Self.hotkeyPrefix.count)))
+      else {
         return nil
       }
       guard let value else { return (action.prefsKey, nil) }
@@ -262,8 +282,8 @@ import Foundation
       else { return nil }
       return (action.prefsKey, HotKeyAction.stored(hotKey))
     }
-    if id.hasPrefix(shotkeyPrefix) {
-      guard let key = ShotKey(rawValue: String(id.dropFirst(shotkeyPrefix.count))) else {
+    if id.hasPrefix(Self.shotkeyPrefix) {
+      guard let key = ShotKey(rawValue: String(id.dropFirst(Self.shotkeyPrefix.count))) else {
         return nil
       }
       guard let value else { return (key.prefsKey, nil) }
@@ -274,6 +294,17 @@ import Foundation
       return (key.prefsKey, HotKeyAction.stored(hotKey))
     }
     return nil
+  }
+
+  /// 读取本机同步的 OCR 服务列表，密钥独立保存在各版钥匙串里。
+  private func ocrWrite(_ value: String?) -> (String, Any?)? {
+    guard sharesEditions else { return nil }
+    guard let value else { return (Prefs.ocrServices, nil) }
+    guard let services = SyncRecords.decodeExact([OCRService].self, from: value),
+      OCRService.sanitized(services) == services,
+      let data = try? JSONEncoder().encode(services)
+    else { return nil }
+    return (Prefs.ocrServices, data)
   }
 
   /// 存着的快捷键里两个动作用了同一个组合：说哪两个（只说第一对）

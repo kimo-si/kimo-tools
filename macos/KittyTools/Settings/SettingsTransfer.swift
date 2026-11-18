@@ -22,6 +22,8 @@ struct SettingsTransfer {
   let clipboard: ClipboardStore
   /// 生词本（收藏的翻译）
   let history: HistoryStore
+  /// OCR 配置与钥匙串密钥作为独立类别导入导出。
+  var ocrServices: OCRServiceStore?
   /// 便签仓库，用的时候现取（它在启动的最后才开，设置窗可能建得更早）；nil = 便签这次用不了（NotesRecovery）：
   /// 导出不带这一类，导入时跳过
   var notes: () -> NoteStore? = { nil }
@@ -73,10 +75,12 @@ struct TransferSection: View {
             let retained = clipboard.items.filter(\.isRetained)
             outgoing = Draft(
               archive: .capture(
-                services: services, clips: clipboard.items, groups: clipboard.groups,
+                services: services, ocrServices: transfer.ocrServices?.services,
+                clips: clipboard.items, groups: clipboard.groups,
                 words: transfer.history.search("", favoritesOnly: true, limit: 0),
                 notes: transfer.notes()?.exportable),
-              secrets: SettingsArchive.secrets(of: services),
+              secrets: SettingsArchive.secrets(
+                of: services, ocrServices: transfer.ocrServices?.services ?? []),
               skippedImages: retained.count { $0.kind == .image },
               skippedFiles: retained.count { $0.kind == .file })
           }
@@ -98,7 +102,7 @@ struct TransferSection: View {
         .disabled(isChoosing)
       } label: {
         Text("设置与数据")
-        Text("设置、快捷键、翻译服务、网页搜索、片段和文字收藏、生词本、便签存成一个文件，换电脑或重装后导回来")
+        Text("设置、快捷键、翻译与 OCR 服务、网页搜索、片段和文字收藏、生词本、便签存成一个文件，换电脑或重装后导回来")
       }
       if transfer.backupFolder != nil { backupRows }
     } header: {
@@ -226,6 +230,7 @@ struct ExportSheet: View {
     -> Bool
   {
     switch section {
+    case .ocrServices: archive.ocrServices == nil
     case .clips: (archive.clips ?? []).isEmpty && (archive.clipGroups ?? []).isEmpty
     case .vocabulary: (archive.vocabulary ?? []).isEmpty
     case .notes: (archive.notes ?? []).isEmpty
@@ -246,7 +251,7 @@ struct ExportSheet: View {
       }
       Hairline()
       Toggle(isOn: $includesSecrets) {
-        TransferLabel(title: "包含翻译服务的密钥", detail: secretsDetail)
+        TransferLabel(title: "包含所选服务的密钥", detail: secretsDetail)
       }
       .disabled(!canIncludeSecrets)
       if sealsSecrets {
@@ -272,7 +277,7 @@ struct ExportSheet: View {
   /// 这次要不要把密钥封进文件
   private var sealsSecrets: Bool { includesSecrets && canIncludeSecrets }
 
-  private var canIncludeSecrets: Bool { sections.contains(.services) && !secrets.isEmpty }
+  private var canIncludeSecrets: Bool { !archive.keeping(sections).accepted(secrets).isEmpty }
 
   private var canExport: Bool {
     !sections.isEmpty
@@ -297,6 +302,7 @@ struct ExportSheet: View {
       let count = archive.hotkeys?.count ?? 0
       return count == 0 ? "都还是默认的组合" : "改过的 \(count) 个，其余是默认的组合"
     case .services: return "\(archive.translateServices?.count ?? 0) 个服务的名称、地址、模型和开关"
+    case .ocrServices: return "\(archive.ocrServices?.count ?? 0) 个 OCR 服务的名称、地域和开关"
     case .engines: return "\(archive.searchEngines?.count ?? 0) 条"
     case .clips:
       let (count, groups) = (archive.clips?.count ?? 0, archive.clipGroups?.count ?? 0)
@@ -321,8 +327,8 @@ struct ExportSheet: View {
   }
 
   private var secretsDetail: String {
-    if !sections.contains(.services) { return "要先勾选「翻译服务」" }
-    if secrets.isEmpty { return "这些服务还没有存密钥" }
+    if sections.isDisjoint(with: [.services, .ocrServices]) { return "要先勾选「翻译服务」或「OCR 服务」" }
+    if !canIncludeSecrets { return "所选服务还没有存密钥" }
     return "勾上后设一个密码，密钥加密后写进文件，导入时输同一个密码；不勾就只导出服务，不带密钥"
   }
 
@@ -331,7 +337,7 @@ struct ExportSheet: View {
     var archive = archive.keeping(sections)
     let data: Data
     do {
-      if sealsSecrets { try archive.seal(secrets, password: password) }
+      if sealsSecrets { try archive.seal(archive.accepted(secrets), password: password) }
       data = try archive.encoded()
     } catch {
       island?.show("导出失败", detail: error.localizedDescription, tone: .error)
@@ -413,7 +419,7 @@ struct ImportSheet: View {
         }
         if section == .services, sections.contains(.services) { hostList }
       }
-      if archive.secrets != nil, sections.contains(.services) {
+      if archive.secrets != nil, !sections.isDisjoint(with: [.services, .ocrServices]) {
         Hairline()
         VStack(alignment: .leading, spacing: 6) {
           Text("文件里带着加密的密钥")
@@ -491,6 +497,8 @@ struct ImportSheet: View {
       "换成文件里的样子：改过的 \(archive.hotkeys?.count ?? 0) 个照文件，其余回到默认的组合"
     case .services:
       "\(archive.translateServices?.count ?? 0) 个：已有的按文件更新，没有的加上；现在的服务不会删"
+    case .ocrServices:
+      "\(archive.ocrServices?.count ?? 0) 个：已有的按文件更新，没有的加上；云端 OCR 会向所选服务上传图片"
     case .engines:
       "\(archive.searchEngines?.count ?? 0) 条：已有的按文件更新，没有的加上；现在的不会删"
     case .clips:
@@ -511,7 +519,7 @@ struct ImportSheet: View {
     do {
       // 密码对了、动手之前先把现在的存一份（开着自动备份时）
       outcome = try archive.install(
-        sections, password: password, services: transfer.services,
+        sections, password: password, services: transfer.services, ocrStore: transfer.ocrServices,
         clipboard: transfer.clipboard, history: transfer.history, noteStore: transfer.notes(),
         beforeWriting: transfer.snapshot)
     } catch SettingsArchive.Failure.backupFailed(let reason) {

@@ -2122,7 +2122,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
       refresh()
       showTranslationCard(
         result.leftovers, translation: result.translation, toggles: translated != nil)
-      let hint = Self.translatedHint(leftovers: result.leftovers.count, drewAny: replaced != nil)
+      // 部分失败时明确说明仍有原文，不能提示成整张图都已替换。
+      let hint =
+        result.message
+        ?? Self.translatedHint(leftovers: result.leftovers.count, drewAny: replaced != nil)
       flashHint([hint])
       // 出了卡片读屏要知道（顶部提示只是看的）
       announce(hint)

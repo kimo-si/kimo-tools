@@ -1,5 +1,5 @@
 // 访达扩展（第十一族「访达右键」，2026-11-08 拍板，PLAN §10「访达右键」）：在访达的右键菜单第一层加几项。
-// - 选中文件 / 文件夹右键：「拷贝路径」「拷贝名称」、设置里选的每个 App 一项「在“X”中打开」（默认只有终端；叫法照访达
+// - 选中文件 / 文件夹右键：「复制路径」「复制父路径」「复制名称」、设置里选的每个 App 一项「在“X”中打开」（默认只有终端；叫法照访达
 //   自己的「在“照片”中打开」）、「移动到 ▸」「复制到 ▸」（常用文件夹 + 选择文件夹…）、「剪切」、「压缩为 ▸」（ZIP、7Z）、
 //   「解压到这里」（选中的都是压缩包时）、「修复乱码文件名」（选中的有名字像乱码、还原得出来的时候）、「隐藏」/「取消隐藏」、
 //   「隐藏扩展名」/「显示扩展名」（看选中的现在是什么样；读不到就当没隐藏）、「拷贝哈希 ▸」（选中的都是文件时）、
@@ -323,14 +323,20 @@ final class FinderMenu: FIFinderSync {
     let option = NSEvent.modifierFlags.contains(.option)
     if Self.shows("finderMenuCopyPath", default: true) {
       let copy = menu.addItem(
-        withTitle: option ? "拷贝路径（终端写法）" : "拷贝路径",
+        withTitle: option ? "复制路径（终端写法）" : "复制路径",
         action: option ? #selector(copyShellPath(_:)) : #selector(copyPath(_:)), keyEquivalent: "")
       copy.tag = container
       copy.image = Self.tile("kitty.finder.copy.path", custom: true, color: Tint.copy)
     }
+    if Self.shows("finderMenuCopyParentPath", default: true) {
+      let parent = Self.add(
+        "复制父路径", #selector(copyParentPath(_:)), symbol: "folder",
+        color: Tint.copy, to: menu)
+      parent.tag = container
+    }
     if items, Self.shows("finderMenuCopyName", default: true) {
       Self.add(
-        option ? "拷贝名称（不带扩展名）" : "拷贝名称",
+        option ? "复制名称（不带扩展名）" : "复制名称",
         option ? #selector(copyStem(_:)) : #selector(copyName(_:)), symbol: "textformat",
         color: Tint.copy, to: menu)
     }
@@ -678,6 +684,12 @@ final class FinderMenu: FIFinderSync {
     hand("copy", app: nil, container: tag >= Self.containerTag)
   }
 
+  /// 把所选项目或当前文件夹交给 App，父路径和去重由 App 处理。
+  @objc private func copyParentPath(_ sender: AnyObject?) {
+    let tag = (sender as? NSMenuItem)?.tag ?? 0
+    hand("parent", container: tag >= Self.containerTag)
+  }
+
   @objc private func open(_ sender: AnyObject?) {
     let apps = Self.openWithApps
     guard let tag = (sender as? NSMenuItem)?.tag else { return }
@@ -844,8 +856,11 @@ final class FinderMenu: FIFinderSync {
   /// 磁盘映像），系统用的可能是另一份里的扩展：投给它的话会再起一个进程，它让位给正在运行的那份时这次动作就丢了（评审实测）。
   /// 核对不了签名（沙盒里查不了那个进程）就照旧投给包着扩展的那份
   private static var target: URL {
+    guard let team = Bundle.main.object(forInfoDictionaryKey: "KittySigningTeam") as? String,
+      team.wholeMatch(of: /[A-Z0-9]{10}/) != nil
+    else { return appURL }
     let text =
-      "identifier \"\(appID)\" and anchor apple generic and certificate leaf[subject.OU] = \"HTX9F4KG39\""
+      "identifier \"\(appID)\" and anchor apple generic and certificate leaf[subject.OU] = \"\(team)\""
     var requirement: SecRequirement?
     guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess,
       let requirement

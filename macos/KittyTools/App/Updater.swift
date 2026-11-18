@@ -6,7 +6,7 @@
 // 所以另有常驻到更新为止的入口（2026-10-06，对标 Alfred 窗口底部的小提示 / Raycast 根搜索顶上那一行 / Sparkle 给后台 App 的
 // 「温和提醒」）：菜单栏图标右上角的小圆点（StatusItem.updateVersion）+ 菜单顶上「更新到 x…」、剪贴板面板和启动器底栏的
 // 「更新到 x」（UpdateBarHint）、关于页的「更新并重新打开」。更新 = 下载 release 里这台架构的包（*_arm64.zip；Intel 上自己编的是 *_x86_64.zip，PR #21）→ ditto 解到 App 所在卷的临时目录 →
-// 校验 bundle id、版本号和签名（Apple 签发、本团队 HTX9F4KG39 的证书）→ 原子地换掉正在运行的 .app →
+// 校验 bundle id、版本号和签名（Apple 签发、与当前构建同团队的证书）→ 原子地换掉正在运行的 .app →
 // 等本进程退出后重新打开。下载是最久的一步，下了多少实时报出来（progress：关于页的进度条、刘海岛上的细条和百分比，
 // 2026-10-13 用户要求「不是一直 loading」），下载中能取消（岛和关于页的「取消」，第四轮体检 E23：回到「有新版本」，
 // 下了一半的临时文件由系统的下载任务删掉）；之后解包、验签、替换只有一两秒，写「正在安装」、不能取消。不用 Sparkle（禁止第三方依赖）；解包、验签交给系统的 ditto / codesign，在进程外跑。
@@ -88,8 +88,7 @@ import AppKit
     private static let architecture = NSBundleExecutableArchitectureARM64
   #endif
   /// 新包必须满足的签名要求：同一个 bundle id、Apple 签发、本团队的证书（只认团队，换证书也能更新）
-  static let requirement =
-    "=identifier \"\(bundleID)\" and anchor apple generic and certificate leaf[subject.OU] = \"HTX9F4KG39\""
+  static let requirement = AppSignature.requirement(for: bundleID).map { "=" + $0 }
 
   /// state / progress / downloading：截图自检直接摆出各种状态；正常使用就是 `Updater()`
   init(state: State = .idle, progress: Double? = nil, downloading: Bool = false) {
@@ -100,7 +99,7 @@ import AppKit
   }
 
   /// 正式版才更新（Debug 版 bundle id 不同）
-  var isSupported: Bool { Bundle.main.bundleIdentifier == Self.bundleID }
+  var isSupported: Bool { Bundle.main.bundleIdentifier == Self.bundleID && Self.requirement != nil }
 
   /// 启动后 10 s 查一次，之后每天一次；没查成（多半是刚开机网络还没好）半小时后再试。设置里关了就跳过
   func start() {
@@ -474,6 +473,7 @@ import AppKit
     else { throw UpdateError("更新包不支持这台 Mac 的芯片，请到发布页下载") }
     // 文件权限不在签名里：去掉组 / 其他人的写权限和 setuid / setgid / sticky，免得装进「应用程序」后别的账户能改它
     try await run("/bin/chmod", ["-R", "go-w,a-st", app.path], failure: "更新包的文件权限处理失败")
+    guard let requirement else { throw UpdateError("当前应用缺少签名团队配置") }
     try await run(
       "/usr/bin/codesign", ["--verify", "--deep", "--strict", "-R", requirement, app.path],
       failure: "更新包的签名校验没通过")

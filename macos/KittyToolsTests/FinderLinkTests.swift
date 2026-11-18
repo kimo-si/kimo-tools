@@ -181,6 +181,17 @@ import UniformTypeIdentifiers
     #expect(FinderLink.pathText([URL(filePath: "/a b/c"), URL(filePath: "/d")]) == "/a b/c\n/d")
   }
 
+  /// 多选同级文件只复制一次父目录，按原顺序保留不同目录和根目录。
+  @Test func copiesParentPathsInSelectionOrder() throws {
+    let result = try #require(
+      parse(link("do=parent&key=K-123&file=/p/a.txt&file=/p/b&file=/q/c&file=/")))
+    #expect(result.action == .copyParentPaths)
+    #expect(result.action.item == .copyParentPath)
+    #expect(FinderLink.parentPathText(FinderLink.parentFolders(result.files)) == "/p\n/q\n/")
+    #expect(parse(link("do=parent&key=K-123")) == nil)
+    #expect(parse(link("do=parent&key=wrong&file=/p/a")) == nil)
+  }
+
   /// 文件夹原样给；App 认得的文件原样给，认不得的给所在文件夹，同一个文件夹只给一次
   @Test func openTargets() {
     let folder = URL(filePath: "/p/folder")
@@ -286,7 +297,8 @@ import UniformTypeIdentifiers
       Prefs.finderRecentFolders,
     ]
     let words = [
-      "do", "key", "app", "file", "copy", "open", "new", "template", "mine", "suffix", "name",
+      "do", "key", "app", "file", "copy", "parent", "open", "new", "template", "mine", "suffix",
+      "name",
       "move",
       "copyto", "to", "choose", "cut", "paste", "alias", "zip", "7z", "extract", "fixnames",
       "hiddenfiles", "hide", "ext", "on", "hash", "algo", "erase", "style", "shell", "stem",

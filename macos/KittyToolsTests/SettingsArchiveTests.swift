@@ -10,6 +10,42 @@ import Testing
 /// 读文件时的校验（别人给的、手改过的文件）、密钥的加解密；片段、文字收藏、生词本的导出和并进库（ClipboardStore.adopt、
 /// HistoryStore.adoptFavorites）。全用临时偏好域、内存库和假的钥匙串读取，不碰用户的偏好、数据和钥匙串
 struct SettingsArchiveTests {
+  /// OCR 单独加密迁移，不把未选择的翻译服务密钥一起写入正式版。
+  @Test func ocrSecretsRoundTripAndSelectedInstall() throws {
+    var tencent = OCRService.builtin(.tencent)
+    tencent.isEnabled = true
+    var archive = SettingsArchive(
+      version: "1", exportedAt: Self.moment,
+      translateServices: [ai], ocrServices: [tencent])
+    let secrets = SettingsArchive.secrets(of: [ai], ocrServices: [tencent]) {
+      "test-value-for-\($0)"
+    }
+    try archive.seal(secrets, password: "test-password")
+    let decoded = try SettingsArchive.read(archive.encoded())
+    let translationStore = TranslateServiceStore(services: [])
+    let ocrStore = OCRServiceStore(services: [.builtin(.apple)])
+    var stored: [String: String] = [:]
+    let outcome = try decoded.install(
+      [.ocrServices], password: "test-password",
+      services: translationStore, ocrStore: ocrStore, store: { stored[$0] = $1 })
+    #expect(outcome.secrets == 2 && stored.keys.allSatisfy { $0.hasPrefix("ocr.tencent.") })
+    #expect(translationStore.services.isEmpty && ocrStore.services.first == tencent)
+    #expect(decoded.keeping([.ocrServices]).translateServices == nil)
+    #expect(decoded.keeping([.services]).ocrServices == nil)
+  }
+
+  /// 服务地域和种类参与密文校验，改配置后不能拿原来的密钥解密。
+  @Test func ocrArchiveRejectsTamperedRouting() throws {
+    var archive = SettingsArchive(
+      version: "1", exportedAt: Self.moment,
+      ocrServices: [.builtin(.tencent)])
+    try archive.seal(["ocr.tencent.secretKey": "sample"], password: "test-password")
+    archive.ocrServices?[0].region = "ap-shanghai"
+    #expect(throws: SettingsArchive.Failure.wrongPassword) {
+      try archive.unseal(password: "test-password")
+    }
+  }
+
   /// 整秒：文件里的时间是 ISO 8601，不带小数秒
   private static let moment = Date(timeIntervalSince1970: 1_760_000_000)
 
@@ -118,7 +154,8 @@ struct SettingsArchiveTests {
     defaults.set(try JSONEncoder().encode(engines), forKey: Prefs.launcherWebSearchEngines)
 
     let archive = SettingsArchive.capture(
-      from: defaults, domainName: name, services: [.zhipu, ai], notes: [], version: "9.9.9",
+      from: defaults, domainName: name, services: [.zhipu, ai], ocrServices: [.builtin(.apple)],
+      notes: [], version: "9.9.9",
       now: Self.moment)
     #expect(
       archive.preferences == [
@@ -464,10 +501,10 @@ struct SettingsArchiveTests {
     #expect(failure("不是 JSON") == .notArchive)
     #expect(failure(#"{"name": "别的 App 的配置", "format": 1}"#) == .notArchive)
     #expect(failure(#"{"app": "Kitty Tools"}"#) == .notArchive)
-    #expect(failure(#"{"app": "Kitty Tools", "format": 3, "version": "9"}"#) == .newer)
+    #expect(failure(#"{"app": "Kitty Tools", "format": 4, "version": "9"}"#) == .newer)
     // 内容本身读得出来、只是格式号不对的：更新的说「先更新」，0 和负数不认
     let valid = file(#""preferences": {}"#)
-    #expect(failure(valid.replacing(#""format": 1"#, with: #""format": 3"#)) == .newer)
+    #expect(failure(valid.replacing(#""format": 1"#, with: #""format": 4"#)) == .newer)
     #expect(failure(valid.replacing(#""format": 1"#, with: #""format": 0"#)) == .notArchive)
     #expect(failure(valid.replacing("Kitty Tools", with: "Other App")) == .notArchive)
     // 标记和版本对，里面的东西不对
@@ -1277,7 +1314,7 @@ struct SettingsArchiveTests {
       ImportSheet.summary(
         SettingsArchive.Section.allCases,
         outcome: Outcome(secrets: 1, clipsAdded: 12, clipsUpdated: 3, wordsAdded: 30), pruned: 0)
-        == "7 类，含密钥，新增 42 条")
+        == "8 类，含密钥，新增 42 条")
     #expect(
       ImportSheet.summary(
         [.preferences, .clips, .vocabulary], outcome: Outcome(clipsAdded: 1), pruned: 5)
@@ -1391,7 +1428,7 @@ struct SettingsArchiveTests {
     let archive = SettingsArchive.capture(
       from: defaults, domainName: name, services: [], notes: store.exportable,
       now: Self.moment)
-    #expect(archive.format == 2 && archive.sections.contains(.notes))
+    #expect(archive.format == SettingsArchive.currentFormat && archive.sections.contains(.notes))
     let notes = try #require(archive.notes)
     #expect(Set(notes.map(\.id)) == [plain.id, filed.id])
     let entry = try #require(notes.first { $0.id == filed.id })
@@ -1406,7 +1443,7 @@ struct SettingsArchiveTests {
 
     let data = try archive.encoded()
     let text = try #require(String(data: data, encoding: .utf8))
-    #expect(text.contains(#""format" : 2"#) && text.contains(#""notes" : ["#))
+    #expect(text.contains(#""format" : 3"#) && text.contains(#""notes" : ["#))
     #expect(text.contains("去年的总结") && !text.contains("删掉的"))
     let read = try SettingsArchive.read(data)
     #expect(read == archive)
@@ -1459,7 +1496,7 @@ struct SettingsArchiveTests {
     #expect(notes.notes == [mine])
 
     #expect(throws: SettingsArchive.Failure.newer) {
-      try self.archive(json: old.replacing(#""format": 1"#, with: #""format": 3"#))
+      try self.archive(json: old.replacing(#""format": 1"#, with: #""format": 4"#))
     }
     // 格式 2 的文件带不带便签都读
     #expect(

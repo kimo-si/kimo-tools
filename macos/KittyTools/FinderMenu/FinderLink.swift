@@ -1,6 +1,6 @@
 // 访达扩展交过来的一次动作（第十一族「访达右键」，2026-11-08 拍板，PLAN §10「访达右键」）。扩展只画菜单（KittyToolsFinder/FinderMenu），
 // 点了用 App 自己的网址把动作交过来：<App 的 bundle id>://finder?do=<动作>&key=<凭证>&…&file=/a&file=/b，动作是
-// copy（拷贝路径）、name（拷贝名称）、open（app=bundle id，用 App 打开）、new（template=模板名，mine=1 是模板文件夹里的；
+// copy（复制路径）、parent（复制父路径）、name（复制名称）、open（app=bundle id，用 App 打开）、new（template=模板名，mine=1 是模板文件夹里的；
 // file 是右键的文件夹）、suffix（自定义后缀，file 是文件夹）、templates（打开模板文件夹）、move / copyto（to=常用文件夹的路径，
 // 或 choose 另选）、cut（剪切）、paste（file 是右键的文件夹）、alias（发送替身到桌面）、zip / 7z（压缩）、extract（解压到这里）、
 // clip（从剪贴板新建，file 是右键的文件夹）、copy 带 style=shell 是按住 ⌥ 时的「拷贝路径（终端写法）」、name 带 style=stem 是「拷贝名称（不带扩展名）」，toomany（一次选了
@@ -25,6 +25,7 @@ nonisolated struct FinderLink: Equatable {
   enum Action: Equatable {
     /// shell：终端里能直接用的写法（要加引号的加单引号，几个用空格连起来）
     case copyPaths(shell: Bool)
+    case copyParentPaths
     /// stem：不带扩展名
     case copyNames(stem: Bool)
     /// 扩展里一次选了超过 maxFiles 个
@@ -58,6 +59,7 @@ nonisolated struct FinderLink: Equatable {
     var item: FinderMenuItem? {
       switch self {
       case .copyPaths: .copyPath
+      case .copyParentPaths: .copyParentPath
       case .copyNames: .copyName
       case .open, .tooMany: nil
       case .newFile, .customSuffix, .showTemplates, .newFromClipboard: .newFile
@@ -107,6 +109,8 @@ nonisolated struct FinderLink: Equatable {
     switch one("do") {
     case "copy" where !files.isEmpty:
       action = .copyPaths(shell: one("style") == "shell")
+    case "parent" where !files.isEmpty:
+      action = .copyParentPaths
     case "name" where !files.isEmpty:
       action = .copyNames(stem: one("style") == "stem")
     case "toomany" where files.isEmpty:
@@ -168,12 +172,26 @@ nonisolated struct FinderLink: Equatable {
     return FinderLink(action: action, files: files)
   }
 
-  /// 「拷贝路径」写什么：一个一行
+  /// 「复制路径」写什么：一个一行
   static func pathText(_ files: [URL]) -> String {
     files.map { $0.path(percentEncoded: false) }.joined(separator: "\n")
   }
 
-  /// 「拷贝名称」写什么：带扩展名，一个一行；stem：去掉扩展名——只去系统认得的扩展名（「报告 v2.0 最终版」「Release v1.2」
+  /// 读取所选项目的上一层文件夹，按选中顺序去重。根目录的上一层仍为根目录。
+  static func parentFolders(_ files: [URL]) -> [URL] {
+    var seen: Set<String> = []
+    return files.compactMap { file in
+      let parent = file.path == "/" ? file : file.deletingLastPathComponent()
+      return seen.insert(FileMoves.plainPath(parent)).inserted ? parent : nil
+    }
+  }
+
+  /// 父路径写成每行一个完整路径，目录末尾统一不带斜杠，根目录除外。
+  static func parentPathText(_ folders: [URL]) -> String {
+    folders.map(FileMoves.plainPath).joined(separator: "\n")
+  }
+
+  /// 「复制名称」写什么：带扩展名，一个一行；stem：去掉扩展名——只去系统认得的扩展名（「报告 v2.0 最终版」「Release v1.2」
   /// 的「.0 最终版」「.2」不是扩展名，同访达「隐藏扩展名」的口径），文件夹照原名，App 这类包去掉 .app
   static func nameText(
     _ files: [URL], stem: Bool = false, isDirectory: (URL) -> Bool = { _ in false }
@@ -268,6 +286,7 @@ nonisolated struct FinderLink: Equatable {
 
   /// 这个审计令牌对应的进程是本团队签名、id 是 identifier 的（同 Updater.requirement 的写法）
   static func signed(auditToken: Data, as identifier: String) -> Bool {
+    guard let text = AppSignature.requirement(for: identifier) else { return false }
     var code: SecCode?
     guard
       SecCodeCopyGuestWithAttributes(
@@ -275,8 +294,6 @@ nonisolated struct FinderLink: Equatable {
       let code
     else { return false }
     var requirement: SecRequirement?
-    let text =
-      "identifier \"\(identifier)\" and anchor apple generic and certificate leaf[subject.OU] = \"HTX9F4KG39\""
     guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess,
       let requirement
     else { return false }
@@ -337,7 +354,12 @@ nonisolated struct FinderLink: Equatable {
     case .copyPaths(let shell):
       Paster.write(string: shell ? shellText(link.files) : pathText(link.files), record: true)
       // 拷贝是转一手交给本 App 做的，访达那边看不出成没成：说一声（同几家成熟产品拷完的提示）
-      island?.show(shell ? "已拷贝终端写法的路径" : "已拷贝路径", detail: copiedDetail(link.files))
+      island?.show(shell ? "已复制终端写法的路径" : "已复制路径", detail: copiedDetail(link.files))
+    case .copyParentPaths:
+      let parents = parentFolders(link.files)
+      // 将去重后的父目录写入剪贴板及历史，和「复制路径」走同一个入口。
+      Paster.write(string: parentPathText(parents), record: true)
+      island?.show("已复制父路径", detail: copiedDetail(parents))
     case .copyNames(let stem):
       let text = nameText(link.files, stem: stem) {
         let values = try? $0.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
@@ -345,7 +367,7 @@ nonisolated struct FinderLink: Equatable {
       }
       Paster.write(string: text, record: true)
       island?.show(
-        "已拷贝名称", detail: link.files.count == 1 ? text : "\(link.files.count) 个名称")
+        "已复制名称", detail: link.files.count == 1 ? text : "\(link.files.count) 个名称")
     case .tooMany:
       island?.show("一次最多 \(maxFiles) 项", detail: "少选一些再右键", tone: .warning)
     case .open(let id):

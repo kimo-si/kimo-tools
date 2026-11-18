@@ -350,21 +350,35 @@ import Observation
     }
   }
 
-  /// 存成片段：已有同样正文的条目就把它标成片段并置顶，否则新建
-  func saveSnippet(_ text: String) {
-    if let existing = items.first(where: { $0.kind == .text && $0.text == text }) {
-      update([existing.id]) { $0.isSnippet = true }
-      bump(existing.id)
-    } else {
-      var item = ClipItem(kind: .text)
-      item.text = text
+  /// 存成片段并归入指定分组；同正文复用原条目。未指定分组或分组已删除时保留原归属。
+  @discardableResult
+  func saveSnippet(_ text: String, name: String = "", in group: UUID? = nil) -> UUID? {
+    let target = group.flatMap { id in groups.first(where: { $0.id == id })?.id }
+    let note = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    let setSnippetFields: (inout ClipItem) -> Void = { item in
       item.isSnippet = true
-      record(item)
-      // 删了还没提交的同一段被 record 拿回来了：它原来不是片段（record 按时间插，不一定在最前，按正文找）
-      if let saved = items.first(where: { $0.kind == .text && $0.text == text }), !saved.isSnippet {
-        update([saved.id]) { $0.isSnippet = true }
+      if !note.isEmpty { item.note = note }
+      if let target {
+        item.groupID = target
+        item.favorite = true
       }
     }
+    if let existing = items.first(where: { $0.kind == .text && $0.text == text }) {
+      // 同一条 UPDATE 写入片段标记、备注和收藏归属，再按原有行为置顶。
+      update([existing.id], setSnippetFields)
+      bump(existing.id)
+      return existing.id
+    }
+    var item = ClipItem(kind: .text)
+    item.text = text
+    setSnippetFields(&item)
+    // 新条目首次写库时带上归属。若从撤销栈复用了同文条目，则给该条目保存片段字段。
+    record(item)
+    guard let saved = items.first(where: { $0.kind == .text && $0.text == text }) else {
+      return nil
+    }
+    if saved.id != item.id { update([saved.id], setSnippetFields) }
+    return saved.id
   }
 
   /// 导入片段和文字收藏（设置的导出 / 导入，SettingsArchive）。收藏夹按名字对（去首尾空白）：已有同名的用它，没有的
@@ -497,10 +511,11 @@ import Observation
     }
   }
 
-  /// 空名、超过 24 字（输入框已经拦住，不截断）或重名返回 nil
+  /// 拒绝空名、过长、重名和属于全部历史入口的 ALL。
   private func validGroupName(_ rawName: String, excluding id: UUID? = nil) -> String? {
     let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !name.isEmpty, name.count <= ClipGroup.maxName,
+      name.caseInsensitiveCompare(ClipGroup.allTitle) != .orderedSame,
       !groups.contains(where: { $0.name == name && $0.id != id })
     else { return nil }
     return name

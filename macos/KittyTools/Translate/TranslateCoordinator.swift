@@ -46,7 +46,12 @@ import Observation
   }
 
   var sourceText = "" {
-    didSet { if !sourceText.isEmpty { missedSelection = false } }
+    didSet {
+      guard !sourceText.isEmpty else { return }
+      missedSelection = false
+      // 用户开始输入时，稍后识别出的原文不能盖掉正在编辑的内容。
+      cancelScreenshotRecognition()
+    }
   }
   /// 划词没取到文字、当输入翻译打开的（体检 A16）：原文框占位换成「没取到选中的文字…」，开始输入就恢复
   private(set) var missedSelection = false
@@ -91,7 +96,7 @@ import Observation
   private(set) var copiedCard: String?
   /// 每复制一次加一：同一张卡对勾还在（Style.copiedHold）时再复制也要再闪一次，对勾计时也从头算
   private(set) var copyTick = 0
-  /// 原文区的提示（划词缺「辅助功能」授权、原文过长等）；截图识字失败这类走刘海岛，不走这里
+  /// 结果区的提示（划词缺授权、原文过长、截图识字没有结果）。
   private(set) var notice: String?
   /// 提示要引导去授权的那一项；nil 就不显示授权按钮
   private(set) var noticePermission: Permissions.Kind?
@@ -107,6 +112,8 @@ import Observation
   @ObservationIgnored private var request: TranslateRequest?
   /// 复制即译带来的原文（去首尾空白）：没改过就不自动复制（免得盖掉刚复制的原文，体检 A19）；别的入口开会话时清掉
   @ObservationIgnored private var copiedSource: String?
+  private var screenshotTask: Task<Void, Never>?
+  var isRecognizingScreenshot: Bool { screenshotTask != nil }
   @ObservationIgnored private var dictionaryTask: Task<Void, Never>?
   @ObservationIgnored private var tasks: [String: (run: Int, task: Task<Void, Never>)] = [:]
   /// 每次 run 加一：旧任务拿着旧号，写不进同一个服务的新卡（B1，和 Task.isCancelled 两道保险）
@@ -273,6 +280,28 @@ import Observation
     noticePermission = permission
   }
 
+  /// 清掉上一轮的原文和卡片，先显示识别进度，拿到原文后启动翻译。
+  func recognizeScreenshot(_ recognize: @escaping () async -> String?) {
+    beginInput()
+    screenshotTask = Task {
+      guard !Task.isCancelled else { return }
+      let text = await recognize()
+      guard !Task.isCancelled else { return }
+      screenshotTask = nil
+      guard let text else { return showNotice("截图文字识别失败，请重试") }
+      guard !text.isEmpty else { return showNotice("没有识别到文字，可以把选区框大一些再试") }
+      // 复用普通翻译会话的服务选择、流式结果与错误处理。
+      translate(text)
+    }
+  }
+
+  /// 作废还在识别的截图，防止其结果写回已经换过的会话。
+  private func cancelScreenshotRecognition() {
+    guard let screenshotTask else { return }
+    screenshotTask.cancel()
+    self.screenshotTask = nil
+  }
+
   /// 输入翻译热键 / 菜单再打开浮窗（体检 A14）：保留上次的原文和结果（调用方把原文全选，打字即替换），
   /// 收起提示、关上历史；上次收起时被中断的卡片重新跑——折叠着的不跑、回到「没翻」，点开再翻。收着时换过语言的整个重译
   func resumeInput() {
@@ -310,6 +339,8 @@ import Observation
 
   /// 用当前原文开新会话（语言设置变了也调它重译）
   func start() {
+    // 浮窗刚打开时，空原文上的回车不会中断自动识字。
+    guard !isRecognizingScreenshot else { return }
     languageChanged = false
     cancel()
     showsHistory = false
@@ -470,8 +501,9 @@ import Observation
     run(service)
   }
 
-  /// 停掉还在跑的服务，没出完的卡片标成中断（不然卡片一直是「生成中」，隐藏的浮窗里骨架、彗星、光标动画停不下来）
+  /// 停掉正在识别的截图和还在跑的服务，没出完的卡片标成中断。
   func cancel() {
+    cancelScreenshotRecognition()
     dictionaryTask?.cancel()
     for entry in tasks.values { entry.task.cancel() }
     tasks = [:]

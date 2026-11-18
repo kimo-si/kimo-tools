@@ -18,8 +18,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   // 和菜单栏、快捷键页、引导、速查表同序（记住的上次页存的是 rawValue，调顺序不受影响）。2026-11-04 功能管理拍板 M3：
   // 便签、提醒、状态屏一组，启动台、程序坞预览一组（启动台原来在便签后面）
   // 2026-11-13 起便签之后都是插件（Feature.plugins），刘海岛（2026-11-12 PR #17 加的页）也成了插件、挪到最后
-  case general, clipboard, launcher, translate, screenshot, record, notes, reminders,
-    statusScreen, launchpad, dockPreview, finderMenu, island, hotkeys, about
+  case general, clipboard, launcher, translate, ocr, screenshot, record, notes, reminders,
+    statusScreen, launchpad, dockPreview, finderMenu, defaultApps, appInput, island, hotkeys, about
 
   var id: String { rawValue }
 
@@ -30,8 +30,11 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 和 allCases 同序，单测锁住。中间三组带标题、能折叠（groupTitle）。插件那组只有添加了的（没添加的插件页不在 pages 里，
   /// 见 SettingsRoot），按这里的先后排、不按添加的先后
   static let groups: [[SettingsPage]] = [
-    [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
-    [.notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .island],
+    [.general], [.clipboard, .launcher, .translate, .ocr], [.screenshot, .record],
+    [
+      .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .defaultApps,
+      .appInput, .island,
+    ],
     [.hotkeys, .about],
   ]
 
@@ -59,9 +62,10 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 通用、快捷键与关于两组不写：一头一尾，收起来也省不了地方
   var groupTitle: String? {
     switch self {
-    case .clipboard, .launcher, .translate: "文字与搜索"
+    case .clipboard, .launcher, .translate, .ocr: "文字与搜索"
     case .screenshot, .record: "截图与录制"
-    case .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .island:
+    case .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .defaultApps,
+      .appInput, .island:
       "插件"
     case .general, .hotkeys, .about: nil
     }
@@ -83,6 +87,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   var title: String {
     switch self {
     case .general: "通用"
+    case .defaultApps: "默认应用"
+    case .appInput: "应用输入法"
     case .island: "刘海岛"
     case .clipboard: "剪贴板"
     case .launcher: "启动器"
@@ -95,6 +101,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .dockPreview: "程序坞预览"
     case .finderMenu: "访达右键"
     case .translate: "翻译"
+    case .ocr: "OCR"
     case .hotkeys: "快捷键"
     case .about: "关于"
     }
@@ -103,6 +110,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   var symbol: String {
     switch self {
     case .general: "kitty.general"
+    case .defaultApps: "app.badge.checkmark"
+    case .appInput: "keyboard"
     case .island: HotKeyAction.island.symbol
     case .clipboard: HotKeyAction.clipboard.symbol
     case .launcher: HotKeyAction.launcher.symbol
@@ -116,6 +125,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .dockPreview: "kitty.dock.preview"
     case .finderMenu: "kitty.finder.menu"
     case .translate: "kitty.translate"
+    // OCR：取景框里一个 A（和识字的取景框 + 文字行分得开）
+    case .ocr: "kitty.ocr"
     case .hotkeys: "kitty.hotkeys"
     case .about: "kitty.about"  // 品牌页：猫头
     }
@@ -125,6 +136,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   var color: Color {
     switch self {
     case .general: Style.Family.general
+    case .defaultApps: Style.Family.finderMenu
+    case .appInput: Style.Family.keyboard
     case .island: Style.Family.general
     case .clipboard: Style.Family.clipboard
     case .launcher: Style.Family.command
@@ -136,6 +149,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .dockPreview: Style.Family.dockPreview
     case .finderMenu: Style.Family.finderMenu
     case .translate: Style.Family.translate
+    case .ocr: Style.Family.ocr
     case .hotkeys: Style.Family.keyboard
     case .about: Color(nsColor: AccentPalette.brandPink)  // 关于是品牌页，不随强调色变
     }
@@ -145,6 +159,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   var summary: String {
     switch self {
     case .general: "功能、外观、菜单栏、登录时打开、权限、同步、导出与导入、数据目录"
+    case .defaultApps: "选择访达双击文件时使用的应用"
+    case .appInput: "切换 App 时自动选择输入法和中英文模式"
     case .island: "正在播放、下一个日程和月历、音量和亮度、点刘海打开的快捷动作和最近的提示、自动展开、触感反馈、系统提示"
     case .clipboard: "历史上限、面板、内容格式和隐私"
     case .launcher: "搜索 App、文件、书签与历史、网页搜索与快捷链接、脚本命令、命令和别名"
@@ -155,8 +171,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .statusScreen: "拦住键盘鼠标的全屏告示：有哪些状态、各是什么样子、怎么退出"
     case .reminders: "到点提醒你：什么时候响、用什么方式、点了「稍后」推多久"
     case .dockPreview: "停在程序坞图标上时弹出的窗口缩略图：开关和要给的授权"
-    case .finderMenu: "在访达里右键：新建文件、拷贝路径、移动复制、压缩解压"
+    case .finderMenu: "在访达里右键：新建文件、复制路径、移动复制、压缩解压"
     case .translate: "语言、翻译服务与密钥、历史"
+    case .ocr: "截图识别文字：服务商、识别语言、密钥、浮窗"
     case .hotkeys: "所有全局快捷键"
     case .about: "版本与更新内容"
     }
@@ -165,6 +182,10 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 侧栏搜索按这些词筛页（页里各项设置的叫法）
   var keywords: [String] {
     switch self {
+    case .defaultApps:
+      ["文件关联", "默认打开方式", "扩展名", "后缀", "双击", "UTI", "PDF", "Markdown"]
+    case .appInput:
+      ["键盘", "输入源", "中英文", "中文模式", "英文模式", "搜狗拼音", "IME"]
     case .general:
       [
         "外观", "浅色", "深色", "暗黑", "主题", "跟随系统", "强调色", "主题色", "颜色", "开机", "登录", "自启", "权限", "辅助功能",
@@ -186,7 +207,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "历史", "天数", "保留", "永久", "图片", "占用", "预览", "链接", "网页", "格式", "纯文本",
         "识别", "文字", "OCR", "隐私", "密钥", "银行卡", "清空", "退出", "锁屏", "排除", "App",
         "收藏", "收藏夹", "片段", "密码", "敏感", "网站", "标题", "透镜", "单击", "双击", "点击", "粘贴",
-        "位置", "面板位置", "鼠标", "跟随鼠标", "上次位置",
+        "仅复制", "位置", "面板位置", "鼠标", "跟随鼠标", "上次位置",
       ]
     case .launcher:
       [
@@ -239,7 +260,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       ]
     case .finderMenu:
       [
-        "访达", "Finder", "右键", "右键菜单", "上下文菜单", "拷贝路径", "复制路径", "路径", "终端", "Terminal",
+        "访达", "Finder", "右键", "右键菜单", "上下文菜单", "拷贝路径", "复制路径", "复制父路径", "复制名称", "路径", "终端",
+        "Terminal",
         "编辑器", "打开方式", "用 App 打开", "在 App 中打开", "改名", "扩展", "登录项与扩展", "新建文件", "新建", "模板", "后缀",
         "Word",
         "Excel", "PPT", "Markdown", "文本", "压缩", "解压", "zip", "7z", "跳过", "排除", "忽略", "node_modules",
@@ -250,6 +272,12 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "位置", "浮窗位置", "鼠标", "清空",
         "服务", "密钥", "查词", "词典", "单词", "音标", "例句", "生词本", "收藏",
         "智谱", "OpenAI", "Anthropic", "DeepL", "Google", "百度", "有道", "微软", "火山", "腾讯", "AI", "模型",
+      ]
+    case .ocr:
+      [
+        "OCR", "识别", "文字", "截图", "取字", "识字", "图片", "密钥", "服务",
+        "Apple", "本机", "离线", "百度", "腾讯", "火山", "语言", "自动复制", "导出",
+        "位置", "浮窗位置", "鼠标", "面板大小",
       ]
     case .hotkeys:
       // 「钉图」：动作名是「钉住剪贴板内容」，搜「钉图」也要找得到这一页
@@ -579,10 +607,10 @@ struct SettingsRoot: View {
       .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 240)
     } detail: {
       VStack(spacing: 0) {
-        // 关于是品牌页、没有页头；通用、翻译、启动器、启动台、状态屏、提醒、访达右键把页头画在自己的 NavigationStack 里，
+        // 关于是品牌页、没有页头；通用、翻译、OCR、启动器、启动台、状态屏、提醒、访达右键把页头画在自己的 NavigationStack 里，
         // 推进详情页时一起换掉（N12）
         if ![
-          .about, .general, .translate, .launcher, .launchpad, .statusScreen, .reminders,
+          .about, .general, .translate, .ocr, .launcher, .launchpad, .statusScreen, .reminders,
           .finderMenu,
         ].contains(navigation.page) {
           PageHeader(page: navigation.page)

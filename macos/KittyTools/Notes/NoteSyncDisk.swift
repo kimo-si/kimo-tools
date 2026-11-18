@@ -26,6 +26,23 @@ import Foundation
 import os
 
 nonisolated enum NoteSyncDisk {
+  /// 同一用户的两版 App 共用一个本机目录，库和同步账本仍按版本独立。
+  static let editionsFolder = URL.applicationSupportDirectory.appending(
+    path: "Kitty Tools 本机版本同步", directoryHint: .isDirectory)
+
+  /// 在 Application Support 创建本机同步目录，只有当前用户可访问新建的目录。
+  @concurrent static func prepareEditionsFolder() async throws -> URL {
+    try FileManager.default.createDirectory(
+      at: editionsFolder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    return editionsFolder
+  }
+
+  /// 识别本机专用同步目录，沿用同一个文件夹协议。
+  static func isEditionsFolder(_ path: String?) -> Bool {
+    guard let path else { return false }
+    return URL(filePath: path).standardizedFileURL.path == editionsFolder.standardizedFileURL.path
+  }
+
   /// 墓碑文件、别的小文件最大多少
   static let maxErasedBytes = 32 << 20
   static let maxSmallBytes = 64 << 10

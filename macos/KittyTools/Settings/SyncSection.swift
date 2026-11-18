@@ -93,7 +93,7 @@ struct SyncSection: View {
         LabeledContent {
           EmptyView()
         } label: {
-          Text("其他电脑")
+          Text(syncer.usesEditionSync ? "其他版本" : "其他电脑")
           Text(peersLine)
         }
       } else {
@@ -111,6 +111,43 @@ struct SyncSection: View {
   // MARK: 没开
 
   private var offRow: some View {
+    Group {
+      syncLocationRow
+        .confirmationDialog(
+          "和这个文件夹里已有的数据合在一起？",
+          isPresented: Binding {
+            joining != nil
+          } set: {
+            if !$0 { joining = nil }
+          },
+          presenting: joining
+        ) { joining in
+          Button("合在一起") { start(joining.folder) }
+        } message: { joining in
+          Text(
+            (joining.notes > 0
+              ? "同步目录有 \(joining.devices) 个参与方、\(joining.notes) 条便签（含「最近删除」里的）。"
+              : "同步目录已有 \(joining.devices) 个参与方。")
+              + Self.joinNote)
+        }
+        .sheet(isPresented: $connecting) {
+          SyncServerForm(syncer: syncer) {
+            connecting = false
+            syncer.start()
+          }
+        }
+      LabeledContent {
+        Button("同步本机版本…", action: useEditionsFolder)
+          .disabled(isBusy)
+      } label: {
+        Text("Dev 和正式版")
+        Text("先在常用的版本开启，等首轮完成，再到另一个版本开启")
+      }
+    }
+  }
+
+  /// 附上已有同步方式与操作反馈。
+  private var syncLocationRow: some View {
     LabeledContent {
       HStack(spacing: 8) {
         Button("连接服务器…") {
@@ -129,29 +166,6 @@ struct SyncSection: View {
           : "选一个几台电脑都看得到的空文件夹（比如在 iCloud 云盘里新建一个），或者连一个 WebDAV 服务器；每台选同一个")
       if let problem {
         Text(problem).foregroundStyle(Color(nsColor: .systemOrange))
-      }
-    }
-    .confirmationDialog(
-      "和这个文件夹里已经在同步的电脑合在一起？",
-      isPresented: Binding {
-        joining != nil
-      } set: {
-        if !$0 { joining = nil }
-      },
-      presenting: joining
-    ) { joining in
-      Button("合在一起") { start(joining.folder) }
-    } message: { joining in
-      Text(
-        (joining.notes > 0
-          ? "这个文件夹里已经有 \(joining.devices) 台电脑在同步，有 \(joining.notes) 条便签（含「最近删除」里的）。"
-          : "这个文件夹里已经有 \(joining.devices) 台电脑在同步。")
-          + Self.joinNote)
-    }
-    .sheet(isPresented: $connecting) {
-      SyncServerForm(syncer: syncer) {
-        connecting = false
-        syncer.start()
       }
     }
   }
@@ -180,17 +194,7 @@ struct SyncSection: View {
         return
       }
       looking = true
-      Task {
-        let seen = await NoteSyncDisk.inspect(folder: folder, device: syncer.store.deviceID)
-        looking = false
-        isBusy = false
-        // 有别的 Mac 在同步才问（更新的格式不问：开的时候直接说先更新）
-        if let marker = seen.marker, marker.format <= NoteSyncFolder.format, seen.devices > 0 {
-          joining = Joining(folder: folder, devices: seen.devices, notes: seen.notes)
-        } else {
-          start(folder)
-        }
-      }
+      Task { await inspect(folder) }
     }
     if let window = NSApp.keyWindow {
       panel.beginSheetModal(for: window, completionHandler: chosen)
@@ -199,6 +203,36 @@ struct SyncSection: View {
     }
   }
 
+  /// 只在明确选择本机同步时创建目录，并复用已有的合并确认。
+  private func useEditionsFolder() {
+    problem = nil
+    isBusy = true
+    looking = true
+    Task {
+      do {
+        let folder = try await NoteSyncDisk.prepareEditionsFolder()
+        await inspect(folder)
+      } catch {
+        looking = false
+        isBusy = false
+        problem = error.localizedDescription
+      }
+    }
+  }
+
+  /// 已有同步参与方时，确认首轮采用对方配置之后再接入。
+  private func inspect(_ folder: URL) async {
+    let seen = await NoteSyncDisk.inspect(folder: folder, device: syncer.store.deviceID)
+    looking = false
+    isBusy = false
+    if let marker = seen.marker, marker.format <= NoteSyncFolder.format, seen.devices > 0 {
+      joining = Joining(folder: folder, devices: seen.devices, notes: seen.notes)
+    } else {
+      start(folder)
+    }
+  }
+
+  /// 启用所选目录并发起第一轮同步。
   private func start(_ folder: URL) {
     isBusy = true
     looking = true
@@ -331,6 +365,9 @@ struct SyncSection: View {
 
   private var peersLine: String {
     guard !syncer.peers.isEmpty else {
+      if syncer.usesEditionSync, syncer.lastSync != nil {
+        return "等另一个版本开启本机同步"
+      }
       // 第一轮还没合完（或者合之前就停了）时不知道有没有
       return syncer.lastSync == nil
         ? "同步一轮之后列在这里"

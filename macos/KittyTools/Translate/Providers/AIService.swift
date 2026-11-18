@@ -107,9 +107,14 @@ nonisolated enum AIService {
 
   private static let workingTier = Mutex<[String: Int]>([:])
 
+  /// 开始一次带有效译文时限的流式请求；参数降级共用这次预算，不因重试重新计时。
   static func chatStream(
     url: URL, headers: [String: String], body: [String: Any], tiers: [[String: Any]], model: String,
-    delta: @escaping @Sendable ([String: Any]) -> StreamDelta
+    delta: @escaping @Sendable ([String: Any]) -> StreamDelta,
+    limits: HTTP.Limits? = nil,
+    events: @escaping @Sendable (URLRequest) async throws -> AsyncThrowingStream<String, Error> = {
+      try await HTTP.events($0)
+    }
   ) -> AsyncThrowingStream<String, Error> {
     let cacheKey = "\(url.absoluteString)\n\(model)"
     let headers = headers.merging(openCodeHeaders(url)) { $1 }
@@ -118,47 +123,92 @@ nonisolated enum AIService {
     }
     return AsyncThrowingStream { continuation in
       let task = Task {
+        let trace = TranslationTrace()
+        defer { trace.record(.api, since: trace.started) }
         do {
-          var tier = workingTier.withLock { $0[cacheKey] } ?? 0
-          while true {
-            do {
-              let events = try await HTTP.events(requests[tier])
-              workingTier.withLock { $0[cacheKey] = tier }
-              var text = StreamingText()
-              var truncated = false
-              var shown: String?
-              for try await payload in events {
-                guard
-                  let object = (try? JSONSerialization.jsonObject(with: Data(payload.utf8)))
-                    as? [String: Any]
-                else { continue }
-                if let message = HTTP.message(in: object) { throw TranslateError(message: message) }
-                let piece = delta(object)
-                if let content = piece.text { text.append(content) }
-                truncated = truncated || piece.isTruncated
-                // 空串只在思考时发（开头 role 那一段的空 content 不算）；内容没变不重复发
-                let visible = text.visible
-                if !visible.isEmpty || piece.isThinking || text.isThinking, visible != shown {
-                  shown = visible
-                  continuation.yield(visible)
-                }
-              }
-              guard !text.final.isEmpty else { throw TranslateError.emptyResult }
-              continuation.yield(text.final)
-              continuation.finish(throwing: truncated ? TranslateError.truncated : nil)
-              return
-            } catch let error as TranslateError
-              where [400, 422].contains(error.status) && tier < requests.count - 1
-            {
-              tier += 1
-            }
+          // 心跳、空内容和思考不能续期；首字、后续进展以及总时间同时受约束。
+          try await HTTP.withProgressTimeout(limits: limits ?? HTTP.limits(for: url)) { progress in
+            try await generate(
+              requests, cacheKey: cacheKey, delta: delta, progress: progress,
+              trace: trace, continuation: continuation, events: events)
           }
+          try Task.checkCancellation()
+          continuation.finish()
         } catch {
           continuation.finish(throwing: error)
         }
       }
       continuation.onTermination = { _ in task.cancel() }
     }
+  }
+
+  /// 按缓存的可用参数档位请求；只有参数不被接受才降档，其他错误交回调用方。
+  private static func generate(
+    _ requests: [URLRequest], cacheKey: String,
+    delta: @escaping @Sendable ([String: Any]) -> StreamDelta, progress: HTTP.Progress,
+    trace: TranslationTrace, continuation: AsyncThrowingStream<String, Error>.Continuation,
+    events: @Sendable (URLRequest) async throws -> AsyncThrowingStream<String, Error>
+  ) async throws {
+    var tier = workingTier.withLock { $0[cacheKey] } ?? 0
+    while true {
+      try Task.checkCancellation()
+      do {
+        let response = try await events(requests[tier])
+        // 缓存已被服务接受的参数，后续请求不重复试错。
+        workingTier.withLock { $0[cacheKey] = tier }
+        try await consume(
+          response, delta: delta, progress: progress, trace: trace, into: continuation)
+        return
+      } catch let error as TranslateError
+        where [400, 422].contains(error.status) && tier < requests.count - 1
+      {
+        tier += 1
+      }
+    }
+  }
+
+  /// 累积流式译文；取消后的缓冲数据不能续期或当作最终成功，截断仍保留原来的错误语义。
+  private static func consume(
+    _ events: AsyncThrowingStream<String, Error>,
+    delta: @Sendable ([String: Any]) -> StreamDelta, progress: HTTP.Progress,
+    trace: TranslationTrace, into continuation: AsyncThrowingStream<String, Error>.Continuation
+  ) async throws {
+    var text = StreamingText()
+    var truncated = false
+    var shown: String?
+    for try await payload in events {
+      try Task.checkCancellation()
+      guard
+        let object = (try? JSONSerialization.jsonObject(with: Data(payload.utf8)))
+          as? [String: Any]
+      else { continue }
+      if let message = HTTP.message(in: object) { throw TranslateError(message: message) }
+      let piece = delta(object)
+      if let content = piece.text { text.append(content) }
+      truncated = truncated || piece.isTruncated
+      // 只在正文改变时续期；单独的思考信号仍交给卡片显示，但不能重置时限。
+      publish(
+        text, piece: piece, shown: &shown, progress: progress, trace: trace, into: continuation)
+    }
+    try Task.checkCancellation()
+    guard !text.final.isEmpty else { throw TranslateError.emptyResult }
+    continuation.yield(text.final)
+    if truncated { throw TranslateError.truncated }
+  }
+
+  /// 发布变化的正文或思考状态，首次真实译文另记耗时。
+  private static func publish(
+    _ text: StreamingText, piece: StreamDelta, shown: inout String?, progress: HTTP.Progress,
+    trace: TranslationTrace, into continuation: AsyncThrowingStream<String, Error>.Continuation
+  ) {
+    let visible = text.visible
+    guard !visible.isEmpty || piece.isThinking || text.isThinking, visible != shown else { return }
+    if !visible.isEmpty {
+      if shown?.isEmpty != false { trace.record(.firstText, since: trace.started) }
+      progress.receivedText()
+    }
+    shown = visible
+    continuation.yield(visible)
   }
 
   // MARK: 地址、参数、增量解析

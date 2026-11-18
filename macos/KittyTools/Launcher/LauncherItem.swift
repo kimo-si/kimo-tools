@@ -199,6 +199,8 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     .inputTranslate: "Translate Input", .translateReplace: "Translate Replace",
     .screenshotTranslate: "Screenshot Translate", .screenshot: "Screenshot Capture",
     .screenshotLastRegion: "Capture Last Region", .recognizeText: "OCR Recognize Text QR",
+    .screenshotOCR: "OCR Text Recognition 文字识别 截图取字",
+    .imageTranslate: "Image Translate 原图翻译 图上翻译 截图翻译",
     .screenRecord: "Screen Recording Record Video",
     .audioRecord: "Audio Recording Record Voice Microphone",
     // 「钉图」：标题是「钉住剪贴板内容」，不放进来搜「钉图」找不到它（菜单里的另两项都叫「…钉图」）；剪贴板里的文字也能钉（issue #4），

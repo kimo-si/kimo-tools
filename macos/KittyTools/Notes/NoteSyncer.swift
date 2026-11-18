@@ -247,6 +247,19 @@ import Observation
 
   var isEnabled: Bool { folder != nil && library != nil }
 
+  /// 本机两版共用的文件夹。WebDAV 镜像和用户原有的同步目录照旧。
+  var usesEditionSync: Bool {
+    server == nil && NoteSyncDisk.isEditionsFolder(folder?.path)
+  }
+
+  /// 正常退出本机版本前，把最后一次改动交给同步队列。
+  func flushEditionSync() async {
+    guard usesEditionSync else { return }
+    // 当前一轮尚未结束时，再排一轮以写出刚发生的改动。
+    syncNow()
+    while let task, !Task.isCancelled { await task.value }
+  }
+
   // MARK: 开关
 
   /// 用这个文件夹同步：没有标记的写一个（新的库），有标记的接着用那个库。返回没开成的原因（nil = 开了，调用方接着

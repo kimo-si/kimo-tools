@@ -365,7 +365,7 @@ struct UpdaterTests {
     #expect(installed["CFBundleShortVersionString"] as? String == version)
     try await Self.shell(
       "/usr/bin/codesign",
-      ["--verify", "--deep", "--strict", "-R", Updater.requirement, target.path])
+      ["--verify", "--deep", "--strict", "-R", try #require(Updater.requirement), target.path])
   }
 
   private static func shell(_ tool: String, _ arguments: [String]) async throws {

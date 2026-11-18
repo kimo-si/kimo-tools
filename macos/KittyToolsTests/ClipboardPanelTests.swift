@@ -27,6 +27,10 @@ struct ClipboardPanelTests {
       store.record(item)
     }
     let model = ClipboardPanelModel(store: store)
+    // 操作菜单的默认顺序和格式独立于本机 Dev 的偏好。
+    let suite = "kitty-clipboard-\(directory.lastPathComponent)"
+    let prefs = try #require(UserDefaults(suiteName: suite))
+    model.defaults = prefs
     model.writeClipboard = { _ in }
     return (model, store)
   }
@@ -118,7 +122,7 @@ struct ClipboardPanelTests {
     model.select(try item(model, "4"))
     model.toggleFavorite([try item(model, "4").id])
     #expect(model.selectedItem?.text == "5")
-    // 收藏夹筛选里移出收藏夹：同样
+    // 收藏夹筛选里移出分组：同样
     let group = try #require(store.createGroup(named: "工作"))
     model.scope = .all
     model.assign(Set(store.items.map(\.id)), to: group.id)
@@ -126,6 +130,44 @@ struct ClipboardPanelTests {
     model.select(try item(model, "1"))
     model.assign([try item(model, "1").id], to: nil)
     #expect(model.selectedItem?.text == "4")
+  }
+
+  /// 类型和分组一起过滤，切回 ALL 后仍保持当前类型。
+  @Test func groupTabsKeepTypeFilterIndependent() throws {
+    let (model, store) = try makeModel(["工作记录", "私人记录"])
+    let group = try #require(store.createGroup(named: "工作"))
+    let work = try item(model, "工作记录")
+    var file = ClipItem(kind: .file)
+    file.filePaths = ["/tmp/work.txt"]
+    store.record(file)
+    model.assign([work.id, file.id], to: group.id)
+
+    model.selectGroup(.group(group.id))
+    #expect(Set(model.visibleItems.map(\.id)) == [work.id, file.id])
+    model.palette = .types
+    model.run(try #require(model.menuItems.first { $0.id == "kind.text" }))
+    #expect(model.visibleItems.map(\.id) == [work.id])
+
+    model.selectGroup(.all)
+    #expect(model.typeTitle == ClipItem.Kind.text.title)
+    #expect(model.visibleItems.count == 2)
+    model.palette = .types
+    model.run(try #require(model.menuItems.first { $0.title == "全部类型" }))
+    #expect(model.visibleItems.count == 3 && model.tokens.isEmpty)
+  }
+
+  /// ALL 始终保留给全部历史，删除当前分组会回到 ALL。
+  @Test func selectedGroupCanBeDeletedWithoutLosingHistory() throws {
+    let (model, store) = try makeModel(["收到"])
+    #expect(store.createGroup(named: " all ") == nil)
+    let group = try #require(store.createGroup(named: "工作"))
+    #expect(!store.renameGroup(group.id, to: "ALL"))
+    model.assign([try item(model, "收到").id], to: group.id)
+    model.selectGroup(.group(group.id))
+    model.deleteGroup(group)
+    #expect(model.groupFilter == .all)
+    #expect(model.visibleItems.first?.text == "收到")
+    #expect(model.visibleItems.first?.favorite == true)
   }
 
   /// 多选随搜索 / 筛选裁剪（体检 B8）：勾 3 条后输入只命中其中 1 条的词，底栏「已选 1 条」、⌘⌫ 只删这 1 条；
@@ -220,7 +262,7 @@ struct ClipboardPanelTests {
     #expect(model.actions.map(\.title) == menu.map(\.title))
     #expect(
       menu.map(\.title) == [
-        "粘贴", "仅复制", "打开链接", "钉到屏幕", "翻译", "放大预览", "收藏", "放进新收藏夹…", "存为片段", "备注…", "编辑内容…",
+        "粘贴", "仅复制", "打开链接", "钉到屏幕", "翻译", "放大预览", "收藏", "放进新分组…", "存为片段", "备注…", "编辑内容…",
         "删除",
       ])
     #expect(menu.map(\.section) == [0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3])
@@ -289,7 +331,7 @@ struct ClipboardPanelTests {
     #expect(translated == ["hello", "world"])
   }
 
-  /// ⌘K 的子列表（体检 C3）：→ / ↩ 进「移到收藏夹」，过滤词只过滤这一级，← / Esc 回到第一级并选中进去的那一行，
+  /// ⌘K 的子列表（体检 C3）：→ / ↩ 进「移到分组」，过滤词只过滤这一级，← / Esc 回到第一级并选中进去的那一行，
   /// 再 Esc 关菜单
   @Test func submenuNavigation() throws {
     let (model, store) = try makeModel(["一"])
@@ -299,8 +341,8 @@ struct ClipboardPanelTests {
     let index = try #require(model.filteredActions.firstIndex { $0.id == "groups" })
     model.actionSelection = index
     #expect(model.handleCommand(#selector(NSResponder.moveRight(_:))))
-    #expect(model.submenuTitle == "移到收藏夹")
-    #expect(model.filteredActions.map(\.title) == ["工作", "生活", "新建收藏夹…"])
+    #expect(model.submenuTitle == "移到分组")
+    #expect(model.filteredActions.map(\.title) == ["工作", "生活", "新建分组…"])
     model.actionQuery = "sh"  // 拼音首字母
     #expect(model.filteredActions.map(\.title) == ["生活"])
     #expect(!model.handleCommand(#selector(NSResponder.moveLeft(_:))))  // 有过滤词：← 移光标
@@ -309,7 +351,7 @@ struct ClipboardPanelTests {
     #expect(
       model.submenuTitle == nil && model.palette == .actions && model.actionSelection == index)
     model.runSelectedAction()  // ↩ 也进
-    #expect(model.submenuTitle == "移到收藏夹")
+    #expect(model.submenuTitle == "移到分组")
     #expect(model.handleCommand(#selector(NSResponder.cancelOperation(_:))))
     #expect(model.submenuTitle == nil && model.palette == .actions)
     #expect(model.handleCommand(#selector(NSResponder.cancelOperation(_:))))
@@ -426,7 +468,7 @@ struct ClipboardPanelTests {
     // 从子列表回第一级：整张列表换回来的同一拍选中进去的那一行（第 7 行，不滚的话只露一半）
     host.rootView = ActionMenu(
       items: (0..<3).map { ActionMenu.Item(title: "收藏夹 \($0)") }, selection: 0,
-      header: "移到收藏夹", maxRows: 8.5
+      header: "移到分组", maxRows: 8.5
     ) { _ in }
     settle()
     select(7)
@@ -562,6 +604,41 @@ struct ClipboardPanelTests {
     #expect(model.visibleItems.count == 1)
   }
 
+  /// 在命名分组里用 ⌘N 新建片段，保存后当前列表可见，重新读库后归属仍在。
+  @Test func newSnippetStaysInSelectedGroup() throws {
+    let (model, store) = try makeModel([])
+    let group = try #require(store.createGroup(named: "工作"))
+    model.selectGroup(.group(group.id))
+    #expect(model.handleKeyEquivalent(try key(kVK_ANSI_N)))
+    model.saveSnippet("回复模板", name: "  工作回复  ")
+    let saved = try #require(model.visibleItems.first)
+    #expect(saved.groupID == group.id && saved.favorite && saved.isSnippet)
+    #expect(saved.note == "工作回复")
+
+    try store.reload()
+    #expect(model.visibleItems.map(\.id) == [saved.id])
+    #expect(model.visibleItems.first?.favorite == true)
+  }
+
+  /// 正文去重保留条目身份；明确选中分组时归入该组，在 ALL 保存时保留原归属。
+  @Test func savingExistingSnippetKeepsIdentityAndUsesSelectedGroup() throws {
+    let (model, store) = try makeModel(["常用模板"])
+    let id = try #require(store.items.first?.id)
+    let original = try #require(store.createGroup(named: "原分组"))
+    let target = try #require(store.createGroup(named: "目标分组"))
+    store.assign([id], to: original.id)
+    model.selectGroup(.group(target.id))
+    model.saveSnippet("常用模板", name: "原备注")
+    #expect(model.visibleItems.map(\.id) == [id])
+
+    model.selectGroup(.all)
+    model.saveSnippet("常用模板")
+    try store.reload()
+    #expect(store.items.map(\.id) == [id])
+    #expect(store.items.first?.groupID == target.id)
+    #expect(store.items.first?.note == "原备注")
+  }
+
   /// ⌘Y 大卡（体检 B11）：打开后新条目进来选中不跳；正文里 ⌘C 只交出选中的纯文本（多段按换行拼）
   @Test func quickLookCopyIsPlainText() throws {
     let (model, store) = try makeModel(["一", "二"])
@@ -586,18 +663,43 @@ struct ClipboardPanelTests {
     #expect(copied == ["第一行", "第\n第"])
   }
 
-  /// 鼠标点一行（mac-clipboard §4）：平时单击选中、双击粘贴，打开「单击条目直接粘贴」后点一下就粘贴；
+  /// 鼠标点一行（mac-clipboard §4）：默认单击选中、双击确认，开启单击确认后点一下就执行默认操作；
   /// ⌘ 单击、⇧ 单击不看开关，照常多选；不是鼠标点的（旁白激活，连击数 0）开着也只选中
-  @Test func clickPastesOnlyWhenAsked() {
+  @Test func clickConfirmsOnlyWhenAsked() {
     typealias Model = ClipboardPanelModel
-    #expect(Model.click(modifiers: [], clicks: 1, pastesOnClick: false) == .select)
-    #expect(Model.click(modifiers: [], clicks: 2, pastesOnClick: false) == .paste)
-    #expect(Model.click(modifiers: [], clicks: 1, pastesOnClick: true) == .paste)
-    #expect(Model.click(modifiers: [], clicks: 0, pastesOnClick: true) == .select)
+    #expect(Model.click(modifiers: [], clicks: 1, confirmsOnClick: false) == .select)
+    #expect(Model.click(modifiers: [], clicks: 2, confirmsOnClick: false) == .confirm)
+    #expect(Model.click(modifiers: [], clicks: 1, confirmsOnClick: true) == .confirm)
+    #expect(Model.click(modifiers: [], clicks: 0, confirmsOnClick: true) == .select)
     for on in [false, true] {
-      #expect(Model.click(modifiers: .command, clicks: 1, pastesOnClick: on) == .check)
-      #expect(Model.click(modifiers: [.shift, .capsLock], clicks: 2, pastesOnClick: on) == .range)
+      #expect(Model.click(modifiers: .command, clicks: 1, confirmsOnClick: on) == .check)
+      let shiftClick = Model.click(modifiers: [.shift, .capsLock], clicks: 2, confirmsOnClick: on)
+      #expect(shiftClick == .range)
     }
+  }
+
+  /// 回车、编号快捷键与操作菜单首项都只写剪贴板，写完收起，整个过程不查找粘贴目标。
+  @Test func confirmCopiesWithoutPasting() throws {
+    let (model, _) = try makeModel(["甲", "乙"])
+    defer { model.defaults.removeObject(forKey: Prefs.clipboardCopyOnConfirm) }
+    var dismissed = 0
+    var written: [String] = []
+    model.hidePanel = { dismissed += 1 }
+    model.writeClipboard = { written.append($0.first?.string(forType: .string) ?? "") }
+    model.pasteTargetView = {
+      Issue.record("仅复制时调用了粘贴路径")
+      return NSTextView()
+    }
+    #expect(model.actions.first?.title == "粘贴")
+    model.defaults.set(true, forKey: Prefs.clipboardCopyOnConfirm)
+    #expect(model.actions.first?.title == "仅复制")
+    #expect(model.actions.first { $0.title == "粘贴" }?.shortcut == nil)
+    #expect(model.handleCommand(#selector(NSResponder.insertNewline(_:))))
+    #expect(model.handleKeyEquivalent(try key(kVK_ANSI_2)))
+    model.palette = .actions
+    #expect(model.handleCommand(#selector(NSResponder.insertNewline(_:))))
+    #expect(written == ["甲", "乙", "甲"])
+    #expect(dismissed == 3)
   }
 
   /// 速查表跟着按键走：剪贴板组里有 ⌘T ⌘O ⌘R ⌥⌘C
@@ -609,7 +711,7 @@ struct ClipboardPanelTests {
 
   /// ClipRowView.showsWholeText 认可的标题，行里真的没被截断（它的宽度预算照着行的布局写，行的布局改了这里先失败）：
   /// 把标题撑到它认可的最宽，按最挤的样子把行画出来（常显的滚动条占掉 16 pt、⌘9 键帽亮着），
-  /// 标题那一段的像素和加宽 400 pt 再画一遍的完全一样（截断了末尾会变成「…」）；对照：再窄 40 pt 就不一样。
+  /// 标题那一段的像素和加宽 400 pt 再画一遍的完全一样（截断了末尾会变成「…」）；对照：窄窗要保留预览。
   /// 屏外窗口，不弹面板、不抢键盘
   @Test func wholeTitleIsNotTruncated() throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -618,7 +720,10 @@ struct ClipboardPanelTests {
     let prefs = try #require(UserDefaults(suiteName: suite))
     defer { prefs.removePersistentDomain(forName: suite) }
     /// 行画成位图后标题那一段（x 从 44 起、宽 title）的像素
-    func titlePixels(_ item: ClipItem, width: CGFloat, title: CGFloat) throws -> Data {
+    func titlePixels(
+      _ item: ClipItem, panelWidth: CGFloat, title: CGFloat, groupName: String?
+    ) throws -> Data {
+      let width = panelWidth - 2 * ClipboardPanelView.inset - 16
       let size = NSSize(width: width, height: ClipRowView.height)
       let window = NSWindow(
         contentRect: NSRect(origin: NSPoint(x: -20000, y: -20000), size: size),
@@ -626,7 +731,7 @@ struct ClipboardPanelTests {
       let host = NSHostingView(
         rootView: ClipRowView(
           item: item, form: nil, shortcutIndex: 8, showsShortcut: true, isChecked: nil,
-          groupName: nil, images: images
+          groupName: groupName, images: images, panelWidth: panelWidth
         )
         .frame(width: width)
         .defaultAppStorage(prefs))
@@ -650,26 +755,29 @@ struct ClipboardPanelTests {
     marked.note = String(repeating: "备注", count: 20)
     marked.richType = .rtf
     marked.isSnippet = true
-    let rowWidth = ClipboardPanelView.width - 2 * ClipboardPanelView.inset - 16
-    for (name, base) in [("没有来源", plain), ("收藏", favorite), ("备注 + 全部标记", marked)] {
+    let width = ClipboardPanelView.width
+    let cases: [(ClipItem, String?)] = [(plain, nil), (favorite, "工作用"), (marked, "很长的一串收藏夹标题")]
+    for (base, groupName) in cases {
       // 先用汉字、再用最窄的字母把标题撑到 showsWholeText 认可的最宽
       var item = base
       var text = ""
       for unit in ["汉", "i"] {
         while true {
           item.text = text + unit
-          guard ClipRowView.showsWholeText(item) else { break }
+          guard ClipRowView.showsWholeText(item, panelWidth: width, groupName: groupName) else {
+            break
+          }
           text += unit
         }
       }
       item.text = text
-      #expect(text.count > 15 && ClipRowView.showsWholeText(item), "\(name)")
+      #expect(text.count > 15)
       let title = (text as NSString).size(
         withAttributes: [.font: NSFont.systemFont(ofSize: 13)]
       ).width
-      let wide = try titlePixels(item, width: rowWidth + 400, title: title)
-      #expect(try titlePixels(item, width: rowWidth, title: title) == wide, "\(name)：标题被截断了")
-      #expect(try titlePixels(item, width: rowWidth - 40, title: title) != wide, "\(name)：对照")
+      let wide = try titlePixels(item, panelWidth: width + 400, title: title, groupName: groupName)
+      #expect(try titlePixels(item, panelWidth: width, title: title, groupName: groupName) == wide)
+      #expect(!ClipRowView.showsWholeText(item, panelWidth: width - 40, groupName: groupName))
     }
   }
 

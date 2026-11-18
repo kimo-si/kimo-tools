@@ -91,11 +91,12 @@ struct FinderMenuTab: View {
       .gated(by: .finderMenu)
       Section {
         ItemToggle(.copyPath)
+        ItemToggle(.copyParentPath)
         ItemToggle(.copyName)
       } header: {
-        Text("拷贝")
+        Text("复制")
       } footer: {
-        SectionFootnote("路径是完整路径、不加引号，选了几个就一行一个，空白处是这个文件夹的路径；拷好后刘海岛说一声，剪贴板历史里也有。")
+        SectionFootnote("路径按每行一个复制，空白处以当前文件夹为准。复制的内容会记进剪贴板历史。")
       }
       .gated(by: .finderMenu)
       Section {

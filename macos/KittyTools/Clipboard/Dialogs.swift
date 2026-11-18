@@ -75,7 +75,11 @@ struct DialogOverlay: View {
       }
     case .newGroup(let ids):
       NewGroupDialog(model: model, onCancel: close) { group in
-        model.assign(ids, to: group.id)
+        if ids.isEmpty {
+          model.selectGroup(.group(group.id))
+        } else {
+          model.assign(ids, to: group.id)
+        }
         close()
       }
     case .manageGroups:
@@ -216,8 +220,8 @@ private struct NewGroupDialog: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Text("新建收藏夹").dialogTitle()
-      GroupNameField(text: $name, placeholder: "收藏夹名称") { selector in
+      Text("新建分组").dialogTitle()
+      GroupNameField(text: $name, placeholder: "分组名称") { selector in
         switch selector {
         case #selector(NSResponder.insertNewline(_:)): create()
         case #selector(NSResponder.cancelOperation(_:)): onCancel()
@@ -238,9 +242,11 @@ private struct NewGroupDialog: View {
     if let group = model.store.createGroup(named: name) {
       onCreate(group)
     } else {
-      error = "名称为空或已有同名收藏夹"
+      error = Self.invalidName
     }
   }
+
+  static let invalidName = "名称不能为空、重复或使用 ALL"
 }
 
 /// 管理收藏夹（体检 A1）：上面是收藏夹列表（行 28、中性 fill.selected 高亮、行尾 11 pt 条数和「−」），下面「新建收藏夹」输入框。
@@ -270,9 +276,9 @@ private struct ManageGroupsDialog: View {
     var counts: [UUID: Int] = [:]
     for item in model.store.items { if let id = item.groupID { counts[id, default: 0] += 1 } }
     return VStack(alignment: .leading, spacing: 10) {
-      Text("管理收藏夹").dialogTitle()
+      Text("管理分组").dialogTitle()
       if groups.isEmpty {
-        Text("还没有收藏夹。放进收藏夹的条目都算收藏，不会被清理")
+        Text("还没有分组。加到分组的条目会同时收藏")
           .font(.system(size: 12))
           .foregroundStyle(.secondary)
       } else {
@@ -291,7 +297,7 @@ private struct ManageGroupsDialog: View {
           }
         }
       }
-      GroupNameField(text: $newName, placeholder: "新建收藏夹", onCommand: newFieldCommand)
+      GroupNameField(text: $newName, placeholder: "新建分组", onCommand: newFieldCommand)
       if let error { DialogError(text: error) }
       HStack {
         HStack(spacing: 12) {
@@ -306,7 +312,13 @@ private struct ManageGroupsDialog: View {
         Button("完成", action: onClose).buttonStyle(BrandButtonStyle())
       }
     }
-    .onAppear { selection = groups.first?.id }
+    .onAppear {
+      if case .group(let id) = model.groupFilter {
+        selection = id
+      } else {
+        selection = groups.first?.id
+      }
+    }
   }
 
   // MARK: 行
@@ -485,7 +497,7 @@ private struct ManageGroupsDialog: View {
       renaming = nil
       error = nil
     } else {
-      error = "名称为空或已有同名收藏夹"
+      error = NewGroupDialog.invalidName
     }
   }
 
@@ -495,7 +507,7 @@ private struct ManageGroupsDialog: View {
       selection = group.id
       error = nil
     } else {
-      error = "名称为空或已有同名收藏夹"
+      error = NewGroupDialog.invalidName
     }
   }
 

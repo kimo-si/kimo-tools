@@ -1,6 +1,6 @@
 // 剪贴板面板根视图（透镜指令条 Lens Bar，mac-whisker §6 剪贴板）：宽 720、贴在屏幕上方 20%（和启动器同位置），
 // 高度按条数伸缩、顶边不动、≤ 520（height(for:)；透镜预留是常数，↑↓ 永远不改窗口高度）。
-// 56 pt 搜索线 = 放大镜 + 粉色筛选标签 + 输入框；单列满宽列表（始终按天分组吸顶，搜索只过滤，体检 A6），
+// 56 pt 搜索线下放 ALL、自定义分组和类型入口；单列满宽列表（始终按天分组吸顶，搜索只过滤，体检 A6），
 // 行 40，选中行原地展开成透镜（LensView），一块中性高亮在行间滑动、和透镜一起伸缩（前缀和定位）；列表只画可见区附近的项、
 // 上下按前缀和撑开，吸顶的分组标题自己画（list，2026-10-03：交给 LazyVStack 时条目多了高亮错位、越往后越卡）；
 // 片段范围第一行固定一条虚线的「＋ 新建片段 ⌘N」；底栏 36 = （已暂停记录）条数 / 修饰键提示 / 多选动词 ｜ 粘贴 ↩ · 操作 ⌘K ｜
@@ -20,6 +20,17 @@ struct ClipboardPanelView: View {
     var count: Int
   }
 
+  /// 当前分组的一次渲染。退场时仍用这一份几何，和新分组的条目及滚动位置分开。
+  private struct Listing {
+    let itemIDs: [UUID]
+    let layout: ListLayout
+    let selected: ClipItem?
+    let lensOpen: Bool
+    let isMultiSelecting: Bool
+    let group: ClipboardPanelModel.GroupFilter
+    let revision: Int
+  }
+
   @Bindable var model: ClipboardPanelModel
   @AppStorage(Prefs.clipboardHideOnUnfocus) private var hideOnUnfocus = true
   @AppStorage(Prefs.clipboardShowPreview) private var showsLens = true
@@ -27,6 +38,7 @@ struct ClipboardPanelView: View {
   @AppStorage(Prefs.clipboardPanelRows) private var maxRows = 0.0
   /// 默认粘贴为纯文本：底栏按住 ⌥ 的提示、右键菜单的替代粘贴跟着换名字
   @AppStorage(Prefs.clipboardPastePlain) private var pastesPlain = false
+  @AppStorage(Prefs.clipboardCopyOnConfirm) private var copiesOnConfirm = false
   @State private var trusted = Permissions.isAccessibilityTrusted
   /// 正按着的 ⌘ / ⌥
   @State private var heldKeys: EventModifiers = []
@@ -35,23 +47,23 @@ struct ClipboardPanelView: View {
   @State private var shownKeys: EventModifiers = []
   /// 多选底栏「收藏夹…」按钮的左缘（面板坐标）：收藏夹列表锚在它上方
   @State private var groupsButtonX: CGFloat = 0
-  /// 滚动位置落在第几段（ListWindow）：列表只画这一段附近的项，跨段时才重算面板。
-  /// 别存滚动位置本身（每帧都会让整个面板重算）；吸顶标题逐帧的位置按几何算（StickyHeaders）
-  @State private var scrollBand = 0
-  @State private var position = ScrollPosition()
+  /// 标题的完整显示以面板当前宽度为准，拖动宽度时透镜才能同步切换正文。
+  @State private var panelWidth = Self.width
+  @Namespace private var groupSelection
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
   /// 和启动器同宽（两块面板同位置同宽，数只写在 Style 里）
   static let width = Style.listPanelWidth
   static let searchHeight: CGFloat = 56
+  static let groupBarHeight: CGFloat = 35
   static let barHeight: CGFloat = 36
   static let headerHeight: CGFloat = 24
   static let bannerHeight: CGFloat = 30
   /// 列表四周内缩（面板圆角 16 − 6 = 高亮 / 透镜的圆角 10，同心）
   static let inset: CGFloat = 6
-  /// 列表区最高 427.5：连同搜索线、发丝线、底栏正好 520
-  static let maxListHeight: CGFloat = 427.5
+  /// 搜索、分组、发丝线和底栏计入 520 pt，剩余空间用于列表。
+  static let maxListHeight: CGFloat = 427.5 - groupBarHeight
   /// 拖下边能定的行数（W2）：默认 8.5 行就是 427.5；按半行吸附
   static let rowRange = 6.5...14.5
 
@@ -62,7 +74,7 @@ struct ClipboardPanelView: View {
 
   /// 面板里列表区以外的高度：搜索栏、发丝线、授权横幅、底栏
   static func chrome(banner: Bool) -> CGFloat {
-    searchHeight + 0.5 + (banner ? bannerHeight : 0) + barHeight
+    searchHeight + groupBarHeight + 0.5 + (banner ? bannerHeight : 0) + barHeight
   }
 
   /// 拖下边时面板能多高（W2）：列表区 6.5 到 14.5 行
@@ -90,13 +102,17 @@ struct ClipboardPanelView: View {
     let newSnippet = model.showsNewSnippetRow(in: items)
     let layout = ListLayout(
       leading: newSnippet ? ClipRowView.height : 0, sections: sections,
-      lens: lensOpen
-        ? selected.map { ($0.id, Lens.height(for: $0, form: model.contentForm(of: $0))) } : nil)
+      lens: lensOpen ? selected.map(lensLayout(for:)) : nil)
+    let listing = Listing(
+      itemIDs: items.map(\.id), layout: layout, selected: selected, lensOpen: lensOpen,
+      isMultiSelecting: !model.multiSelection.isEmpty,
+      group: model.groupFilter, revision: model.groupRevision)
     VStack(spacing: 0) {
       searchBar
+      groupBar
       Hairline()
       if !trusted { permissionBanner }
-      listArea(items, layout: layout, selected: selected, lensOpen: lensOpen)
+      groupViewport(listing)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay { DialogOverlay(model: model) }
       bottomBar(count: items.count)
@@ -109,14 +125,25 @@ struct ClipboardPanelView: View {
           onHover: { model.actionSelection = $0 }, onRun: model.run
         )
         .padding(.leading, 12)
-        .padding(.top, 60 + (trusted ? 0 : Self.bannerHeight))
+        .padding(.top, filterMenuTop)
+      }
+    }
+    .overlay(alignment: .topTrailing) {
+      if model.palette == .types {
+        ActionMenu(
+          items: model.filteredActions, selection: model.actionSelection,
+          emptyText: "没有匹配的类型", anchor: .topTrailing, maxRows: 8.5,
+          onHover: { model.actionSelection = $0 }, onRun: model.run
+        )
+        .padding(.trailing, 12)
+        .padding(.top, filterMenuTop)
       }
     }
     .overlay(alignment: .bottomTrailing) {
       if model.palette == .actions {
         ActionMenu(
           items: model.filteredActions, selection: model.actionSelection,
-          emptyText: model.submenuTitle == nil ? "没有匹配的操作" : "没有匹配的收藏夹",
+          emptyText: model.submenuTitle == nil ? "没有匹配的操作" : "没有匹配的分组",
           header: model.submenuTitle, onBack: model.leaveSubmenu, maxRows: 8.5,
           onHover: { model.actionSelection = $0 }, onRun: model.run
         )
@@ -130,7 +157,7 @@ struct ClipboardPanelView: View {
       if model.palette == .groups {
         ActionMenu(
           items: model.filteredActions, selection: model.actionSelection,
-          emptyText: "没有匹配的收藏夹", anchor: .bottomLeading, maxRows: 8.5,
+          emptyText: "没有匹配的分组", anchor: .bottomLeading, maxRows: 8.5,
           onHover: { model.actionSelection = $0 }, onRun: model.run
         )
         .padding(
@@ -160,6 +187,13 @@ struct ClipboardPanelView: View {
     // 第一条和条数一起看：图片按复制时间插到第 2 条时第一条没变（第四轮体检 E24①）
     .onChange(of: FirstAndCount(id: model.store.items.first?.id, count: model.store.items.count)) {
       model.itemsChanged()
+    }
+    .onChange(of: model.store.groups.map(\.id)) { model.reconcileSelectedGroup() }
+    .onChange(of: model.listGeneration) { model.settleList() }
+    .onGeometryChange(for: CGFloat.self) {
+      floor($0.size.width)
+    } action: {
+      panelWidth = $0
     }
     .coordinateSpace(.named(Self.space))
     .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
@@ -247,7 +281,7 @@ struct ClipboardPanelView: View {
 
   private var searchSymbol: String {
     switch model.palette {
-    case .filters: "line.3.horizontal.decrease"
+    case .filters, .types: "line.3.horizontal.decrease"
     case .actions: "command"
     case .groups: "folder"
     case nil: "magnifyingglass"
@@ -256,12 +290,113 @@ struct ClipboardPanelView: View {
 
   private var placeholder: String {
     switch model.palette {
-    case .filters: "筛选范围、收藏夹、类型、来源"
-    // 子列表只有「移到收藏夹」这一个
-    case .actions: model.submenuTitle == nil ? "搜索操作" : "搜索收藏夹"
-    case .groups: "搜索收藏夹"
+    case .filters: "筛选范围、分组、类型、来源"
+    case .types: "搜索类型"
+    // 子列表只有「移到分组」这一个
+    case .actions: model.submenuTitle == nil ? "搜索操作" : "搜索分组"
+    case .groups: "搜索分组"
     case nil: model.tokens.isEmpty ? "搜索剪贴板，Tab 筛选" : "搜索"
     }
+  }
+
+  // MARK: 分组
+
+  /// 搜索菜单在分组列下方展开，授权提示存在时也留出它的高度。
+  private var filterMenuTop: CGFloat {
+    Self.searchHeight + Self.groupBarHeight + 4 + (trusted ? 0 : Self.bannerHeight)
+  }
+
+  /// ALL 和右侧操作固定，中间的自定义分组按原有顺序横向滚动。
+  private var groupBar: some View {
+    HStack(spacing: 6) {
+      groupButton(ClipGroup.allTitle, filter: .all)
+        .accessibilityLabel("全部剪贴板历史")
+      customGroupTabs
+      Button("新建分组", systemImage: "plus") {
+        model.palette = nil
+        model.dialog = .newGroup([])
+      }
+      .labelStyle(.iconOnly)
+      .buttonStyle(.plain)
+      .frame(width: 24, height: 26)
+      .help("新建分组")
+      typeFilterButton
+    }
+    .padding(.horizontal, 12)
+    .frame(height: Self.groupBarHeight)
+    .disabled(model.dialog != nil)
+    .animation(Style.Motion.glide.animation(reduced: reduceMotion), value: model.groupNavigation)
+    .animation(nil, value: model.groupRevision)
+  }
+
+  /// 通过同一分组入口浏览、改名、删除和调整顺序。
+  private var customGroupTabs: some View {
+    ScrollViewReader { proxy in
+      ScrollView(.horizontal) {
+        HStack(spacing: 6) {
+          ForEach(model.store.groups) { group in
+            groupButton(group.name, filter: .group(group.id))
+              .id(group.id)
+              .contextMenu {
+                Button("管理分组…") {
+                  model.selectGroup(.group(group.id))
+                  model.dialog = .manageGroups
+                }
+              }
+          }
+        }
+      }
+      .scrollIndicators(.hidden)
+      .onChange(of: model.groupFilter) { _, group in
+        guard case .group(let id) = group else { return }
+        withAnimation(Style.Motion.glide.animation(reduced: reduceMotion)) { proxy.scrollTo(id) }
+      }
+    }
+  }
+
+  /// 分组用语义选中态表达，ALL 不提供编辑入口。
+  private func groupButton(_ title: String, filter: ClipboardPanelModel.GroupFilter) -> some View {
+    let isSelected = model.groupFilter == filter
+    return Button {
+      model.selectGroup(filter)
+    } label: {
+      Text(title)
+        .font(.system(size: 12, weight: .semibold))
+        .lineLimit(1)
+        .foregroundStyle(isSelected ? Style.brandInk : .secondary)
+        .padding(.horizontal, 9)
+        .frame(height: 24)
+        .background {
+          if isSelected {
+            Capsule()
+              .fill(Style.brand.opacity(0.14))
+              .matchedGeometryEffect(id: "selectedGroup", in: groupSelection)
+              .transition(.identity)
+          }
+        }
+        .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .fixedSize()
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
+  }
+
+  /// 显示并快速切换内容类型，范围与分组不随类型变化。
+  private var typeFilterButton: some View {
+    Button {
+      model.palette = model.palette == .types ? nil : .types
+    } label: {
+      Label(model.typeTitle ?? "类型", systemImage: "line.3.horizontal.decrease")
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(model.typeTitle == nil ? .secondary : Style.brandInk)
+        .padding(.horizontal, 8)
+        .frame(height: 26)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help("按文字、图片、文件或文字形态筛选")
+    .accessibilityLabel(model.typeTitle.map { "类型筛选：\($0)" } ?? "类型筛选")
+    .accessibilityAddTraits(model.palette == .types ? .isSelected : [])
   }
 
   private var permissionBanner: some View {
@@ -286,23 +421,42 @@ struct ClipboardPanelView: View {
 
   // MARK: 列表
 
+  /// 只有主动换组时才过渡整块视口。搜索、类型筛选和收面板复位继续瞬时换列表。
+  private func groupViewport(_ listing: Listing) -> some View {
+    ZStack(alignment: .topLeading) {
+      ClipGroupViewport(model: model, revision: listing.revision) { scroll in
+        listArea(listing, scroll: scroll)
+      }
+      .id(listing.revision)
+      .zIndex(Double(listing.revision))
+      .transition(ClipGroupTransition(reduceMotion: reduceMotion))
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .clipped()
+    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: model.groupNavigation)
+    .animation(nil, value: model.groupRevision)
+  }
+
+  /// 同一组的空态和滚动列表共用视口；新分组从顶端出现。
   @ViewBuilder private func listArea(
-    _ items: [ClipItem], layout: ListLayout, selected: ClipItem?, lensOpen: Bool
+    _ listing: Listing, scroll: Binding<ClipViewportScroll>
   ) -> some View {
-    if items.isEmpty && layout.leading == 0 {
-      emptyState.onAppear { resetScroll() }
+    if listing.itemIDs.isEmpty && listing.layout.leading == 0 {
+      emptyState(for: listing.group)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { scroll.wrappedValue = ClipViewportScroll() }
     } else {
-      list(items, layout: layout, selected: selected, lensOpen: lensOpen)
+      list(listing, scroll: scroll)
     }
   }
 
   /// 只画可见区附近的那些项（行、分组标题、「新建片段」），上下按前缀和算出的高度撑开（ListWindow，为什么不用 LazyVStack
   /// 见那里；2026-10-03 用户报条目多了高亮错位、滚动和 ↑↓ 卡）：画出来的位置就是 ListLayout 算的，和高亮、滚动、吸顶
   /// 对得上；按键、滚动的开销只和画出来的三十来项有关。吸顶的分组标题因此自己画（StickyHeaders）
-  private func list(_ items: [ClipItem], layout: ListLayout, selected: ClipItem?, lensOpen: Bool)
-    -> some View
-  {
-    let range = layout.window(band: scrollBand)
+  private func list(_ listing: Listing, scroll: Binding<ClipViewportScroll>) -> some View {
+    let layout = listing.layout
+    let range = layout.window(
+      band: scroll.wrappedValue.band, viewport: Self.maxListHeight(rows: maxRows))
     return ScrollView {
       VStack(alignment: .leading, spacing: 0) {
         Color.clear.frame(height: layout.top(of: range.lowerBound))
@@ -311,12 +465,12 @@ struct ClipboardPanelView: View {
           case .newSnippet: newSnippetRow
           case .header(let section): SectionHeader(section: layout.sections[section])
           case .row(let section, let index):
-            clipRow(layout.sections[section].rows[index], selected: selected, lensOpen: lensOpen)
+            clipRow(layout.sections[section].rows[index], in: listing)
           }
         }
         Color.clear.frame(height: layout.totalHeight - layout.top(of: range.upperBound))
       }
-      .background(alignment: .topLeading) { highlight(layout: layout, selected: selected) }
+      .background(alignment: .topLeading) { highlight(listing) }
       // 吸顶的分组标题在滚动内容里（滚动条照样画在它上面）：只给画出来的这一段涉及的那一两组画
       .overlay(alignment: .top) {
         if let shown = layout.sections(in: range) {
@@ -325,36 +479,34 @@ struct ClipboardPanelView: View {
             shown: shown)
         }
       }
-      .animation(model.listMotion.animation(reduced: reduceMotion), value: items.map(\.id))
+      .animation(model.listMotion.animation(reduced: reduceMotion), value: listing.itemIDs)
       // 透镜移动：高亮的 offset + height、旧行收起、新行展开同一个 transaction、同一条曲线
       .animation(
         model.selectionMotion.animation(reduced: reduceMotion),
-        value: LensKey(id: selected?.id, isOpen: lensOpen)
+        value: LensKey(id: listing.selected?.id, isOpen: listing.lensOpen)
       )
       .onChange(of: model.listGeneration) {
-        model.settleList()
-        resetScroll()
-        position.scrollTo(edge: .top)
+        guard model.groupRevision == listing.revision else { return }
+        scroll.band.wrappedValue = 0
+        scroll.position.wrappedValue.scrollTo(edge: .top)
       }
       .padding(Self.inset)
     }
     // 让整块透镜露出来：只在它（连同吸顶的分组标题）被挡住时滚，按前缀和算（共用 ListReveal）
     .modifier(
       RevealsSelection(
-        position: $position, key: selected?.id, motion: model.selectionMotion,
+        position: scroll.position, key: listing.selected?.id, motion: model.selectionMotion,
         coveredTop: Self.headerHeight, inset: Self.inset
       ) {
-        guard let id = selected?.id, let offset = layout.offset(of: id) else { return nil }
+        guard let id = listing.selected?.id, let offset = layout.offset(of: id) else { return nil }
         let top = offset + Self.inset
         return top...top + layout.height(of: id)
       }
     )
-    .modifier(TracksScrollBand(band: $scrollBand))
+    .modifier(TracksScrollBand(band: scroll.band))
     // 新的滚动视图（空态之后列表回来）从顶上开始
-    .onAppear { resetScroll() }
+    .onAppear { scroll.band.wrappedValue = 0 }
   }
-
-  private func resetScroll() { scrollBand = 0 }
 
   /// ForEach 的身份：标题 = 那一天，行 = 所在分组 + 条目（为什么带分组见 clipRow）
   private func entryID(_ index: Int, in layout: ListLayout) -> EntryID {
@@ -370,11 +522,11 @@ struct ClipboardPanelView: View {
   }
 
   /// 一块中性高亮 = 透镜的底：按前缀和定位，在行间滑动（不用 matchedGeometryEffect：行离开可见区附近就被拿掉，跟着它会跳）
-  @ViewBuilder private func highlight(layout: ListLayout, selected: ClipItem?) -> some View {
-    if let selected, let offset = layout.offset(of: selected.id) {
+  @ViewBuilder private func highlight(_ listing: Listing) -> some View {
+    if let selected = listing.selected, let offset = listing.layout.offset(of: selected.id) {
       let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
-      let height = layout.height(of: selected.id)
-      if model.multiSelection.isEmpty {
+      let height = listing.layout.height(of: selected.id)
+      if !listing.isMultiSelecting {
         shape.fill(Style.selectedFill)
           // 降低透明度：透镜底提到 0.9 不透明（Whisker §7），不透出后面的材质（只在 15；26 的玻璃自己变实）
           .background {
@@ -398,10 +550,15 @@ struct ClipboardPanelView: View {
             .intersection(proxy.bounds(of: .scrollView) ?? .infinite)
           return visible.isEmpty ? .null : visible.offsetBy(dx: global.minX, dy: global.minY)
         } action: { rect in
+          guard model.groupRevision == listing.revision else { return }
           model.cardFrame = rect.isNull ? nil : (selected.id, rect)
         }
         .offset(y: offset)
-        .onDisappear { if model.cardFrame?.id == selected.id { model.cardFrame = nil } }
+        .onDisappear {
+          if model.groupRevision == listing.revision, model.cardFrame?.id == selected.id {
+            model.cardFrame = nil
+          }
+        }
         .transition(.identity)
         .id(selected.id)
     }
@@ -439,18 +596,29 @@ struct ClipboardPanelView: View {
   /// 挪进「今天」）就是删一行再插一行。身份只有条目 id 时旧行会被原样搬过去、之后不再跟着父视图更新：选中和透镜停在
   /// 搬之前，按前缀和走的高亮对不上行（高亮盖住下面几行、透镜不展开、时间也不刷新）
   private func clipRow(
-    _ row: (offset: Int, element: ClipItem), selected: ClipItem?, lensOpen: Bool
+    _ row: (offset: Int, element: ClipItem), in listing: Listing
   ) -> some View {
     let (index, item) = row
-    let isSelected = item.id == selected?.id
+    let isSelected = item.id == listing.selected?.id
     return ClipListRow(
       item: item, form: model.contentForm(of: item), model: model,
       shortcutIndex: index < 9 ? index : nil, showsShortcut: shownKeys.contains(.command),
-      isSelected: isSelected, lensOpen: lensOpen && isSelected, groupName: groupBadge(for: item)
+      isSelected: isSelected, lensHeight: isSelected ? listing.layout.lens?.height : nil,
+      groupName: groupBadge(for: item, in: listing.group), panelWidth: panelWidth
     )
     // 右键菜单和 ⌘K 同一份动作（体检 B12）；包成视图：菜单打开时才算，不在每次画行时建一遍
     .contextMenu { ActionContextMenu { model.actions(for: item, targets: [item]) } }
     .transition(rowTransition)
+  }
+
+  /// 用当前面板宽度选定透镜总高，列表定位、行和辅助功能共用这个高度。
+  private func lensLayout(for item: ClipItem) -> (id: UUID, height: CGFloat) {
+    (
+      item.id,
+      Lens.height(
+        for: item, form: model.contentForm(of: item), panelWidth: panelWidth,
+        groupName: groupBadge(for: item, in: model.groupFilter))
+    )
   }
 
   /// 新条目从顶部挤入（图标 pop）、删除缩小淡出。换列表（搜索 / 筛选）那一帧插进来的行不带
@@ -465,8 +633,10 @@ struct ClipboardPanelView: View {
       removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .leading)))
   }
 
-  private func groupBadge(for item: ClipItem) -> String? {
-    guard model.groupFilter == .all, let id = item.groupID else { return nil }
+  /// ALL 里的分组名随退场视口保留，指定分组的列表不重复标注分组。
+  private func groupBadge(for item: ClipItem, in group: ClipboardPanelModel.GroupFilter) -> String?
+  {
+    guard group == .all, let id = item.groupID else { return nil }
     return model.store.groups.first { $0.id == id }?.name
   }
 
@@ -493,8 +663,12 @@ struct ClipboardPanelView: View {
   // MARK: 空态
 
   /// 共用的空状态（Shell/Style 的 EmptyState）：28 pt 符号 + 14 semibold 标题 + 说明 / 品牌粉文字按钮
-  @ViewBuilder private var emptyState: some View {
-    if model.isFiltered {
+  @ViewBuilder private func emptyState(for group: ClipboardPanelModel.GroupFilter) -> some View {
+    if group != .all, !model.hasSearchFilters, model.scope == .all {
+      EmptyState(symbol: "folder", title: "这个分组还没有条目") {
+        Text("在历史条目上点右键，选择「移到分组」").foregroundStyle(.secondary)
+      }
+    } else if model.isFiltered {
       EmptyState(symbol: "magnifyingglass", title: "没有匹配的条目") {
         Button("清除搜索和筛选", action: model.clearSearchAndFilters)
           .buttonStyle(.plain)
@@ -519,7 +693,7 @@ struct ClipboardPanelView: View {
       barStatus(count: count)
         .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
         .id(barState(count: count))
-        // 对话框开着时只有「撤销」能点（管理收藏夹里删掉的收藏夹）；多选动词里的粘贴会收起面板、丢掉没保存的字
+        // 对话框开着时只有「撤销」能点（管理分组里删掉的收藏夹）；多选动词里的粘贴会收起面板、丢掉没保存的字
         .disabled(model.dialog != nil && model.toast == nil)
       // 有新版本：条数后面常驻「更新到 x」；提示、多选动词、按住修饰键的替代动作出来时让开
       if barState(count: count) == "count" {
@@ -529,12 +703,10 @@ struct ClipboardPanelView: View {
       Group {
         if count > 0 {
           if model.multiSelection.isEmpty {
-            Button {
-              model.pasteSelection()
-            } label: {
-              hint("粘贴", key: "↩", primary: true)
+            Button(action: { model.confirmSelection() }) {
+              hint(copiesOnConfirm ? "复制" : "粘贴", key: "↩", primary: true)
             }
-            .help("粘贴到当前 App（↩）")
+            .help(copiesOnConfirm ? "复制到系统剪贴板（↩）" : "粘贴到当前 App（↩）")
           }
           Button {
             model.palette = model.palette == .actions ? nil : .actions
@@ -589,9 +761,11 @@ struct ClipboardPanelView: View {
       multiSelectVerbs
     } else if count > 0, shownKeys.contains(.option) {
       Button {
-        model.pasteSelection(plainText: !pastesPlain)
+        model.confirmSelection(plainText: !pastesPlain)
       } label: {
-        hint(model.alternatePasteTitle, key: "⌥↩", leadingKey: true)
+        hint(
+          ClipboardPanelModel.formatActionTitle(copying: copiesOnConfirm, plainText: !pastesPlain),
+          key: "⌥↩", leadingKey: true)
       }
     } else if count > 0, shownKeys.contains(.command) {
       HStack(spacing: 12) {
@@ -601,7 +775,7 @@ struct ClipboardPanelView: View {
         Text("·").foregroundStyle(.tertiary)
         HStack(spacing: 6) {
           KeyCap("⌘1–9")
-          Text("直接粘贴")
+          Text(copiesOnConfirm ? "直接复制" : "直接粘贴")
         }
       }
     } else {
@@ -619,14 +793,16 @@ struct ClipboardPanelView: View {
   }
 
   /// 多选时底栏左边：一排「动词 + 键帽」按钮；对象是勾选项里看得见的（model.targets，搜索 / 筛选换了列表后不算看不见的）。
-  /// 「收藏夹…」打开收藏夹列表（ActionMenu，和 ⌘K 的「移到收藏夹」子列表同一份）
+  /// 「收藏夹…」打开收藏夹列表（ActionMenu，和 ⌘K 的「移到分组」子列表同一份）
   @ViewBuilder private var multiSelectVerbs: some View {
     let items = model.targets
     let ids = Set(items.map(\.id))
     HStack(spacing: 12) {
       Text("已选 \(items.count) 条")
-      Button(action: { model.pasteSelection() }) {
-        hint(ClipboardPanelModel.PasteMode(items).verb, key: "↩", primary: true)
+      Button(action: { model.confirmSelection() }) {
+        hint(
+          copiesOnConfirm ? "复制" : ClipboardPanelModel.PasteMode(items).verb, key: "↩",
+          primary: true)
       }
       Button(action: { model.toggleFavorite(ids) }) {
         hint(items.allSatisfy(\.favorite) ? "取消收藏" : "收藏", key: "⌘D")
@@ -634,7 +810,7 @@ struct ClipboardPanelView: View {
       Button {
         model.palette = model.palette == .groups ? nil : .groups
       } label: {
-        Text("收藏夹…").foregroundStyle(.primary).contentShape(.rect)
+        Text("分组…").foregroundStyle(.primary).contentShape(.rect)
       }
       .onGeometryChange(for: CGFloat.self) {
         $0.frame(in: .named(Self.space)).minX
@@ -666,6 +842,45 @@ struct ClipboardPanelView: View {
   private func countText(_ count: Int) -> String {
     let total = model.store.items.count
     return count == total ? "\(total) 条" : "\(count) / \(total) 条"
+  }
+}
+
+/// 每个分组视口持有自己的滚动位置。只观察滚动段，吸顶标题单独读几何。
+private struct ClipViewportScroll {
+  var band = 0
+  var position = ScrollPosition()
+}
+
+/// 连续换组时最多保留一个退场视口，只有当前视口接收点击和辅助功能操作。
+private struct ClipGroupViewport<Content: View>: View {
+  let model: ClipboardPanelModel
+  let revision: Int
+  @ViewBuilder let content: (Binding<ClipViewportScroll>) -> Content
+  @State private var scroll = ClipViewportScroll()
+
+  var body: some View {
+    let current = model.groupRevision
+    if current - revision <= 1 {
+      content($scroll)
+        .allowsHitTesting(current == revision)
+        .accessibilityHidden(current != revision)
+        .transaction(value: current) {
+          $0.animation = nil
+          $0.disablesAnimations = true
+        }
+    }
+  }
+}
+
+/// 只变换视口的位置和透明度，减弱动态效果时只淡变。
+private struct ClipGroupTransition: Transition {
+  let reduceMotion: Bool
+  private static let travel: CGFloat = 6
+
+  func body(content: Content, phase: TransitionPhase) -> some View {
+    content
+      .opacity(phase.isIdentity ? 1 : 0)
+      .offset(y: !reduceMotion && phase == .willAppear ? Self.travel : 0)
   }
 }
 
@@ -761,16 +976,15 @@ struct ListLayout {
     return section(range.lowerBound)...section(range.upperBound - 1)
   }
 
-  /// 滚动位置落在第 band 段时要画的项（ListWindow：上下各多画一些，可见区最高 maxListHeight）
-  func window(band: Int) -> Range<Int> {
+  /// 起点没有上方内容，只预绘下一段开头的几行；离开起点后恢复完整滚动缓冲。
+  func window(band: Int, viewport: CGFloat) -> Range<Int> {
     ListWindow.range(
-      tops, band: band, inset: ClipboardPanelView.inset,
-      // 按拖得最高的那么多行算：多画几行不碍事，省得每次读设置
-      viewport: ClipboardPanelView.maxListHeight(rows: ClipboardPanelView.rowRange.upperBound))
+      tops, band: band, inset: ClipboardPanelView.inset, viewport: viewport,
+      overscan: band == 0 ? 3 * ClipRowView.height : ListWindow.overscan)
   }
 }
 
-/// 列表的一行 + 选中时展开的透镜。整行是一个按钮（单击选中、双击粘贴，或按设置点一下就粘贴：model.click），透镜里的值胶囊、「美化」是里面的小按钮
+/// 列表的一行 + 选中时展开的透镜。整行按设置单击或双击确认，透镜里的值胶囊、「美化」是里面的小按钮。
 private struct ClipListRow: View {
   let item: ClipItem
   let form: ContentForm?
@@ -778,8 +992,9 @@ private struct ClipListRow: View {
   let shortcutIndex: Int?
   let showsShortcut: Bool
   let isSelected: Bool
-  let lensOpen: Bool
+  let lensHeight: CGFloat?
   let groupName: String?
+  let panelWidth: CGFloat
   @State private var hovered = false
   /// 这次按下已经起了拖放会话（手势结束或被 AppKit 接走后自动复位）
   @GestureState private var dragging = false
@@ -794,18 +1009,19 @@ private struct ClipListRow: View {
           item: item, form: form, query: model.query, shortcutIndex: shortcutIndex,
           showsShortcut: showsShortcut,
           isChecked: model.multiSelection.isEmpty ? nil : model.multiSelection.contains(item.id),
-          groupName: groupName, images: model.store.images
+          groupName: groupName, images: model.store.images, panelWidth: panelWidth
         )
         // 悬停只出 fill.hover，不移动透镜（选中行下面已经有高亮）
         .background(
           hovered && !isSelected ? Style.hoverFill : .clear,
           in: .rect(cornerRadius: Style.Radius.card, style: .continuous))
-        if lensOpen {
-          LensView(item: item, form: form, model: model).transition(lensTransition)
+        if let lensHeight {
+          LensView(item: item, form: form, model: model, height: lensHeight).transition(
+            lensTransition)
         }
       }
       .frame(
-        height: lensOpen ? Lens.height(for: item, form: form) : ClipRowView.height, alignment: .top
+        height: lensHeight ?? ClipRowView.height, alignment: .top
       )
       .clipped()
       .contentShape(.rect)
@@ -828,7 +1044,9 @@ private struct ClipListRow: View {
     }
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(isSelected ? .isSelected : [])
-    .accessibilityValue(lensOpen ? Lens.accessibilityValue(for: item, form: form) : "")
+    .accessibilityValue(
+      lensHeight.map { Lens.accessibilityValue(for: item, form: form, height: $0) } ?? ""
+    )
     .accessibilityAction(named: "粘贴") { model.paste([item]) }
     .accessibilityAction(named: "放大预览") {
       model.select(item)

@@ -24,19 +24,51 @@
 #   产物是 <名字>_<版本>_x86_64.dmg / .zip，不写更新清单（清单只给 arm64）。要让 Intel 上的版本也能 App 内更新，把 _x86_64.zip
 #   传到同一个 macos-v* release：Updater 在 Intel 上认不出清单里的 arm64 包，退回 API 按后缀挑 _x86_64.zip（没有就当没更新）。
 #   每个可执行文件都要正好是这一种架构（lipo 核对），文件名里的架构不许说谎。
+# 常规构建读 Config/Base.xcconfig 的团队。LOCAL_PACKAGE=1 只出 build/local 下的 DMG，供使用自配翻译服务的本机安装。
+# LOCAL_SIGNING_TEAM=<团队> 仍可明确指定本机包的签名团队，产物落在 build/local-<团队>。
 set -euo pipefail
 ARCH="${ARCH:-arm64}"
 [[ "$ARCH" == arm64 || "$ARCH" == x86_64 ]] || { echo "ARCH 只能是 arm64 或 x86_64"; exit 1; }
 M="$(cd "$(dirname "$0")" && pwd)"; OUT="$M/build"; CHANGELOG="$M/KittyTools/Resources/changelog.json"
+LOCAL_PACKAGE="${LOCAL_PACKAGE:-0}"
+set -- ARCHS="$ARCH" CODE_SIGN_IDENTITY='Apple Development'
+if [[ -n "${LOCAL_SIGNING_TEAM:-}" ]]; then
+  [[ "$LOCAL_SIGNING_TEAM" =~ ^[A-Z0-9]{10}$ ]] || { echo "无效的 Apple Development 团队"; exit 1; }
+  set -- "$@" DEVELOPMENT_TEAM="$LOCAL_SIGNING_TEAM"
+  OUT="$OUT/local-$LOCAL_SIGNING_TEAM"
+  LOCAL_PACKAGE=1
+elif [[ "$LOCAL_PACKAGE" == 1 ]]; then
+  OUT="$OUT/local"
+fi
 rm -rf "$OUT/KittyTools.xcarchive" "$OUT/dmg" && mkdir -p "$OUT/dmg"
 xcodebuild archive -project "$M/KittyTools.xcodeproj" -scheme KittyTools -configuration Release \
-  -destination 'generic/platform=macOS' -archivePath "$OUT/KittyTools.xcarchive" ARCHS="$ARCH" -quiet
+  -destination 'generic/platform=macOS' -archivePath "$OUT/KittyTools.xcarchive" \
+  "$@" -quiet
 APP=$(ls -d "$OUT"/KittyTools.xcarchive/Products/Applications/*.app)
 NAME=$(basename "$APP" .app)
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")
+TEAM=$(/usr/libexec/PlistBuddy -c 'Print :KittySigningTeam' "$APP/Contents/Info.plist")
+[[ "$TEAM" =~ ^[A-Z0-9]{10}$ ]] || { echo "无效的 Apple Development 团队"; exit 1; }
+
+# 用 archive 里记录的团队校验每个产物，和运行时的更新校验使用同一个值。
+requirement() {
+  printf '=identifier "%s" and anchor apple generic and certificate leaf[subject.OU] = "%s"' "$1" "$TEAM"
+}
+
+# 从各目标的签名提取叶证书指纹。DMG 用主程序的确切签名身份签，也检查嵌入组件使用同一张证书。
+CERTS=$(mktemp -d "$OUT/.signature.XXXXXX")
+trap 'rm -rf "$CERTS"' EXIT
+signing_identity() {
+  codesign --display --extract-certificates="$CERTS/$2-" "$1" >&2 || return 1
+  shasum -a 1 "$CERTS/$2-0" | cut -d ' ' -f1
+}
+
 jq -e --arg v "$VERSION" 'any(.[]; .version == $v)' "$CHANGELOG" >/dev/null \
   || { echo "changelog.json 缺少 $VERSION 条目"; exit 1; }
-codesign --verify --deep --strict --verbose=2 "$APP"
+codesign --verify --deep --strict --verbose=2 \
+  -R "$(requirement com.yy.kitty-tools.native)" \
+  "$APP"
+IDENTITY=$(signing_identity "$APP" app)
 # 先存变量再判断：pipefail 下 grep -q 提前退出会让管道报错，导致漏报
 ENT=$(codesign -d --entitlements - "$APP" 2>&1 || true)
 [[ "$ENT" != *get-task-allow* ]] || { echo "get-task-allow 混入发布包"; exit 1; }
@@ -48,8 +80,9 @@ done
 # 访达扩展（第十一族「访达右键」，mac-native §6）：在包里、本团队签名、开着沙盒、没有 get-task-allow
 FX="$APP/Contents/PlugIns/KittyToolsFinder.appex"
 codesign --verify --strict \
-  -R '=identifier "com.yy.kitty-tools.native.finder" and anchor apple generic and certificate leaf[subject.OU] = "HTX9F4KG39"' \
+  -R "$(requirement com.yy.kitty-tools.native.finder)" \
   "$FX"
+[[ "$(signing_identity "$FX" finder)" == "$IDENTITY" ]] || { echo "访达扩展与主程序的证书不同"; exit 1; }
 FXENT=$(codesign -d --entitlements - "$FX" 2>&1 || true)
 [[ "$FXENT" == *com.apple.security.app-sandbox* ]] || { echo "访达扩展没开沙盒"; exit 1; }
 [[ "$FXENT" != *get-task-allow* ]] || { echo "get-task-allow 混入访达扩展"; exit 1; }
@@ -57,8 +90,9 @@ FXENT=$(codesign -d --entitlements - "$FX" 2>&1 || true)
 # 的 bundle id，以 com.apple. 开头才给别的 App 的播放信息）、本团队签名、开着强化运行时、没有 get-task-allow
 NP="$APP/Contents/XPCServices/KittyToolsNowPlaying.xpc"
 codesign --verify --strict \
-  -R '=identifier "com.apple.kittytools.nowplaying" and anchor apple generic and certificate leaf[subject.OU] = "HTX9F4KG39"' \
+  -R "$(requirement com.apple.kittytools.nowplaying)" \
   "$NP"
+[[ "$(signing_identity "$NP" now-playing)" == "$IDENTITY" ]] || { echo "XPC 与主程序的证书不同"; exit 1; }
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$NP/Contents/Info.plist")" == com.apple.kittytools.nowplaying ]] \
   || { echo "正在播放服务的 bundle id 不对"; exit 1; }
 NPSIGN=$(codesign -dv "$NP" 2>&1 || true)
@@ -66,7 +100,7 @@ NPSIGN=$(codesign -dv "$NP" 2>&1 || true)
 NPENT=$(codesign -d --entitlements - "$NP" 2>&1 || true)
 [[ "$NPENT" != *get-task-allow* ]] || { echo "get-task-allow 混入正在播放服务"; exit 1; }
 # 内置智谱 key（来自不入库的 Secrets.xcconfig）要真打进包里，否则「装好就能用」不成立；只判断非空，不打印
-[[ -n "$(/usr/libexec/PlistBuddy -c 'Print :KittyBuiltinZhipuKey' "$APP/Contents/Info.plist" 2>/dev/null)" ]] \
+[[ "$LOCAL_PACKAGE" == 1 || -n "$(/usr/libexec/PlistBuddy -c 'Print :KittyBuiltinZhipuKey' "$APP/Contents/Info.plist" 2>/dev/null)" ]] \
   || { echo "内置智谱 key 没打进包（缺 macos/Config/Secrets.xcconfig？）"; exit 1; }
 ditto "$APP" "$OUT/dmg/$NAME.app" && ln -s /Applications "$OUT/dmg/Applications"
 DMG="$OUT/${NAME}_${VERSION}_${ARCH}.dmg"
@@ -113,13 +147,20 @@ APPLESCRIPT
   hdiutil convert "$RW" -format UDZO -ov -o "$DMG"
   rm -f "$RW"
 fi
+DMG_ID=com.yy.kitty-tools.native.dmg
+codesign --sign "$IDENTITY" --identifier "$DMG_ID" "$DMG"
+codesign --verify --strict -R "$(requirement "$DMG_ID")" "$DMG"
 hdiutil verify "$DMG"
+if [[ "$LOCAL_PACKAGE" == 1 ]]; then
+  echo "$DMG"
+  exit 0
+fi
 # App 内更新用的 zip（Updater 下载后 ditto 解开、按同样的签名要求验签）：打完就解开验一次，别发出去才发现装不上
 ZIP="$OUT/${NAME}_${VERSION}_${ARCH}.zip"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
 CHECK="$OUT/zip-check" && rm -rf "$CHECK" && ditto -x -k "$ZIP" "$CHECK"
 codesign --verify --deep --strict \
-  -R '=identifier "com.yy.kitty-tools.native" and anchor apple generic and certificate leaf[subject.OU] = "HTX9F4KG39"' \
+  -R "$(requirement com.yy.kitty-tools.native)" \
   "$CHECK/$NAME.app"
 rm -rf "$CHECK"
 # 更新清单（#12，说明见文件头）：文件名和 Updater.manifestName 一样（单测比对）；只给 arm64 的包写

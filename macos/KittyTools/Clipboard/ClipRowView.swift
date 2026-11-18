@@ -23,15 +23,24 @@ struct ClipRowView: View {
   /// 所在收藏夹的名字：只在收藏夹筛选为「全部」时传
   let groupName: String?
   let images: ImageStore
+  var panelWidth = ClipboardPanelView.width
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   static let height: CGFloat = 40
   /// 行内间距、左右内边距、右侧文字最宽：布局和 showsWholeText 的宽度预算共用
   private static let spacing: CGFloat = 10
   private static let padding: CGFloat = 10
+  private static let spacerMin: CGFloat = 8
+  private static let trailingMin: CGFloat = 120
   private static let trailingMax: CGFloat = 220
+  private static let groupFontSize: CGFloat = 10
+  private static let groupPadding: CGFloat = 6
+  private static let groupTextMax: CGFloat = 120
 
   var body: some View {
+    let showsWholeTitle =
+      isChecked == nil && form == nil
+      && Self.showsWholeText(item, panelWidth: panelWidth, groupName: groupName)
     HStack(spacing: Self.spacing) {
       if let isChecked {
         Image(systemName: isChecked ? "checkmark.circle.fill" : "circle")
@@ -40,14 +49,15 @@ struct ClipRowView: View {
           .contentTransition(.symbolEffect(.replace))
       }
       IconTile(item: item, form: form, images: images)
-      Text(title)
+      Text(title(showsWholeTitle: showsWholeTitle))
         .font(
           form == .code || form == .json
             ? .system(size: 12, design: .monospaced) : .system(size: 13)
         )
         .lineLimit(1)
         .truncationMode(.tail)
-      Spacer(minLength: 8)
+        .layoutPriority(showsWholeTitle ? 2 : 0)
+      Spacer(minLength: Self.spacerMin)
       // 右侧文字、标记、星标是一组，星标自己带它前面的间距：没收藏时星标宽 0、间距也是 0（直接放在外层 HStack 里的话，
       // 宽 0 的星标仍占一个间距，没收藏的行右侧文字比分组横线、键帽往里缩 10 pt）
       HStack(spacing: 0) {
@@ -60,9 +70,10 @@ struct ClipRowView: View {
             .layoutPriority(1)
           if let groupName {
             Text(groupName)
-              .font(.system(size: 10, weight: .medium))
+              .font(.system(size: Self.groupFontSize, weight: .medium))
               .lineLimit(1)
-              .padding(.horizontal, 6)
+              .frame(maxWidth: Self.groupTextWidth(groupName))
+              .padding(.horizontal, Self.groupPadding)
               .frame(height: 16)
               .background(
                 Style.controlFill, in: .rect(cornerRadius: Style.Radius.control, style: .continuous)
@@ -113,7 +124,7 @@ struct ClipRowView: View {
 
   /// 标题：有搜索词且命中不在开头时从命中处摘录（前 12 字 + 「…」），命中词黄底。
   /// 图片靠识别文字搜到的，「图片 宽×高」后面接上命中的那段识别文字
-  private var title: AttributedString {
+  private func title(showsWholeTitle: Bool) -> AttributedString {
     let full = item.title
     guard !query.isEmpty else { return AttributedString(full) }
     var shown = full
@@ -121,7 +132,7 @@ struct ClipRowView: View {
     case .text:
       // 标题本来就显示得全的不摘录：这时透镜没有正文区，摘录会把开头藏起来。
       // 多选时行首多一个勾选圆、标题列变窄（透镜也收着），照旧摘录
-      if isChecked != nil || !Self.showsWholeText(item) {
+      if !showsWholeTitle {
         let text = String((item.text ?? "").prefix(20_000))
         shown = Search.excerpt(of: text, query: query, before: 12, after: 160) ?? full
       }
@@ -140,24 +151,20 @@ struct ClipRowView: View {
     return attributed
   }
 
-  /// 标题已经把整条文本原样显示出来了：去掉首尾空白后和标题一字不差（一行，没有被压成一个空格的连续空白），
-  /// 而且标题列最窄时也放得下。这时透镜不再把同一句话画第二遍（Lens.bodyHeight 给 0，只剩元信息行），
-  /// 有搜索词时标题也不摘录。透镜的高度进前缀和，所以只看条目自己的数据（纯函数，不读时间、修饰键、系统设置）：
-  /// ⌘数字键帽和常显的滚动条都当它在——真的标题列只会比这里算的宽（352 – 406 pt 减去标记；
-  /// ClipboardPanelTests.wholeTitleIsNotTruncated 把行画出来对过）。
-  /// ponytail: 收藏夹筛选为「全部」时行尾多一个收藏夹胶囊，没算进来：收藏夹名超过三个字、标题又贴着上限时
-  /// 会被截掉几个字（⌘Y 看全文）；真碰到再把收藏夹名的宽度传进来
-  static func showsWholeText(_ item: ClipItem) -> Bool {
+  /// 当前面板宽度足够让标题显示全文时，优先分配标题的宽度，给右侧元信息至少留出 trailingMin。
+  /// 提前留出 ⌘数字键帽和滚动条的空间，按修饰键时正文高度保持稳定。
+  static func showsWholeText(
+    _ item: ClipItem, panelWidth: CGFloat = ClipboardPanelView.width, groupName: String? = nil
+  ) -> Bool {
     // 标题列再宽也放不下 400 字节（最窄的字母也有 3 pt 多）；长文本不在这里整段去空白
     guard item.kind == .text, let text = item.text, text.utf8.count <= 400 else { return false }
     let title = item.title
     guard title == text.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
-    // 标题列最窄时：行宽 − 常显的滚动条 16 − 左右内边距 − 图标块 − 三处固定间距（图标后、Spacer 两边）
-    // − Spacer 最窄 8 − 右侧文字那一格（带 maxWidth 的 frame 有多少占多少，字再短也占满 220）
-    // − ⌘数字键帽（⌘9 约 27.4）连它前面的间距
+    // 面板宽度扣掉列表留白、滚动条、行内边距、图标、间距、右侧元信息和键帽。
     var room =
-      ClipboardPanelView.width - 2 * ClipboardPanelView.inset - 16 - 2 * padding - IconTile.side
-      - 3 * spacing - 8 - trailingMax - (spacing + 28)
+      panelWidth - 2 * ClipboardPanelView.inset - 16 - 2 * padding - IconTile.side
+      - 3 * spacing - spacerMin - trailingMin - (spacing + 28)
+    if let groupName { room -= spacing + groupTextWidth(groupName) + 2 * groupPadding }
     // 标记各连它前面的间距（星标没收藏时连间距都不占）；宽度是 SF Symbols 实测后取整：带格式 23、片段 14、星标 15
     if item.richType != nil { room -= spacing + 24 }
     if item.isSnippet { room -= spacing + 16 }
@@ -166,6 +173,14 @@ struct ClipRowView: View {
       withAttributes: [.font: NSFont.systemFont(ofSize: 13)]
     ).width
     return ceil(width) <= room
+  }
+
+  /// 分组胶囊的文字宽度上限，同时用于行布局和标题可用空间的计算。
+  private static func groupTextWidth(_ name: String) -> CGFloat {
+    let width = (name as NSString).size(
+      withAttributes: [.font: NSFont.systemFont(ofSize: groupFontSize, weight: .medium)]
+    ).width
+    return min(ceil(width) + 2, groupTextMax)
   }
 
   /// 右侧：有备注时是备注（secondary，所有条目都能写，体检 A3），否则「来源 · 多久前」（tertiary）

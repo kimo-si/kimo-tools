@@ -149,11 +149,22 @@ struct PluginRemoveSection: View {
         Button("移除") { isAdded = false }
       } label: {
         Text("\(plugin.title)插件")
-        Text(
-          plugin == .island
-            ? "移除后点刘海没反应、刘海两边不挂计时；岛上的提示照常弹。设置留着，再添加就回来"
-            : "移除后菜单栏、主界面、启动器、快捷键里都没有它，设置和数据留着，再添加就回来")
+        Text(detail)
       }
+    }
+  }
+
+  /// 说明移除对各插件入口和设置数据的影响。
+  private var detail: String {
+    switch plugin {
+    case .island:
+      "移除后点刘海没反应、刘海两边不挂计时；岛上的提示照常弹。设置留着，再添加就回来"
+    case .defaultApps:
+      "移除会隐藏设置页，已配置的文件关联由 macOS 保存。再次添加后可以继续编辑"
+    case .appInput:
+      "移除后停止自动切换输入法，已配置的应用规则会保留"
+    default:
+      "移除后菜单栏、主界面、启动器、快捷键里都没有它，设置和数据留着，再添加就回来"
     }
   }
 }

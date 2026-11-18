@@ -21,6 +21,8 @@
 	</array>
 	<key>KittyBuiltinZhipuKey</key>
 	<string>$(ZHIPU_BUILTIN_KEY)</string>
+	<key>KittySigningTeam</key>
+	<string>$(DEVELOPMENT_TEAM)</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

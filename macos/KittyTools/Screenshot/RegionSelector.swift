@@ -65,7 +65,7 @@ enum RegionSelector {
   ) async -> Outcome? {
     let session = SelectionSession(
       mode: .capture, hint: hint ?? "", lastRegion: lastRegion)
-    // ⌥S 截图翻译（autoTranslate）照拍板 C3 不认元素：它的顶部提示也没写滚轮和 Tab
+    // 原图翻译（autoTranslate）不认元素：它的顶部提示也没写滚轮和 Tab。
     session.findsElements = !autoTranslate && SelectionSession.elementsAllowed
     session.preselectsLastRegion = preselect
     session.recordingBlocker = recordingBlocker

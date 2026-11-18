@@ -20,8 +20,8 @@ import Foundation
 nonisolated enum Feature: String, CaseIterable {
   // 顺序 = 设置侧栏、通用页「功能」、菜单栏、快捷键页、速查表的顺序（2026-11-04 功能管理拍板 M3：便签、提醒、状态屏一组，
   // 启动台、程序坞预览一组）。rawValue 是偏好键，不能改
-  case clipboard, launcher, translate, screenshot, record, notes, reminders, statusScreen
-  case launchpad, dockPreview, finderMenu
+  case clipboard, launcher, translate, ocr, screenshot, record, notes, reminders, statusScreen
+  case launchpad, dockPreview, finderMenu, defaultApps, appInput
   // 2026-11-13 起便签之后这几个都是插件（isPlugin），刘海岛新加在最后（刘海岛那一节一直排在菜单栏、快捷键页最后）。
   // 保持唤醒（#3）推到 0.9.0 之后：在分支 plugins-wip 上
   case island
@@ -36,9 +36,12 @@ nonisolated enum Feature: String, CaseIterable {
   /// 「功能」列表、每页「启用」那一行的说明
   var blurb: String {
     switch self {
+    case .defaultApps: "按文件扩展名设置访达双击时打开的 App"
+    case .appInput: "为所有应用设置默认输入法，也可为单个应用指定中英文模式"
     case .clipboard: "记下复制过的文字、图片和文件，随时找回来粘贴"
     case .launcher: "一个搜索框：打开 App、文件和网页，顺手算算式"
     case .translate: "划词、输入、截图翻译，复制即译"
+    case .ocr: "截图识别文字，可选 Apple 系统、百度、腾讯、火山"
     case .screenshot: "框选截图、识别图中文字、钉在屏幕上"
     case .record: "录屏和录音"
     case .notes: "快速记一条，屏幕边缘的便签"
@@ -53,7 +56,8 @@ nonisolated enum Feature: String, CaseIterable {
 
   /// 插件（2026-11-12 起新的大模块；2026-11-13 起除了核心五个都是）
   static let plugins: Set<Feature> = [
-    .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .island,
+    .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .defaultApps,
+    .appInput, .island,
   ]
   var isPlugin: Bool { Self.plugins.contains(self) }
 
@@ -66,6 +70,8 @@ nonisolated enum Feature: String, CaseIterable {
     case .launchpad: ("不要", "看着触控板捏合和触发角，装卸 App 时重扫一遍")
     case .dockPreview: ("辅助功能、屏幕录制", "看着程序坞；鼠标停在图标上才截缩略图")
     case .finderMenu: ("要在系统设置里打开访达扩展", "只在你右键时动")
+    case .defaultApps: ("更改文件关联时系统可能要求确认", "只在设置页读取和更改文件关联")
+    case .appInput: ("切换输入法内部的中英文模式需要辅助功能权限", "切换应用时应用一次输入法规则")
     case .island:
       (
         "不要（打开「下一个日程」要「日历」，打开「音量和亮度」要「辅助功能」；正在播放读不到时，「音乐」「Spotify」的播放控制要「自动化」）",
@@ -84,6 +90,8 @@ nonisolated enum Feature: String, CaseIterable {
     case .launchpad: ["启动台", "launchpad"]
     case .dockPreview: ["程序坞", "窗口预览", "dock"]
     case .finderMenu: ["访达右键", "右键菜单", "finder"]
+    case .defaultApps: ["默认应用", "默认打开方式", "文件关联", "default apps", "file association"]
+    case .appInput: ["应用输入法", "中英文切换", "搜狗拼音", "input method", "ime"]
     case .island: ["刘海岛", "刘海", "灵动岛", "island", "notch"]
     default: []
     }
@@ -91,15 +99,15 @@ nonisolated enum Feature: String, CaseIterable {
 
   /// 没存过时开不开。程序坞预览默认关（拍板 A3：改的是系统程序坞的行为、还要屏幕录制授权，由用户自己打开）；
   /// 访达右键也默认关（2026-11-08 拍板 D2：改的是访达的菜单，还要去系统设置里打开扩展，默认开着也不生效）。
-  /// 全 App 只有这一套：新装只开四个不是靠改它，是第一次启动时把开关明写进偏好（seedNewInstall）——导出、同步里「没有这一项
+  /// 全 App 只有这一套：新装只开五个不是靠改它，是第一次启动时把开关明写进偏好（seedNewInstall）——导出、同步里「没有这一项
   /// = 默认值」，各台默认值不一样的话，导入老电脑的文件、加入同步时没动过的开关会被悄悄换成这台的默认
   /// 新做的插件默认不添加（拍板 A1：新装、升级都不添加）。2026-11-13 从功能转过来的插件照旧用原来的默认值（P2：导出文件、
   /// 同步里「没有这一项 = 默认值」，改了的话 0.8.x 的文件、电脑会把没拨过的便签悄悄关掉）；刘海岛也算开着——0.7.0 起就有
   /// 点刘海，升级上来照旧能用。新装照样一个插件都没添加：seedNewInstall 把核心以外的都明写成关
-  var defaultOn: Bool { ![.dockPreview, .finderMenu].contains(self) }
+  var defaultOn: Bool { ![.dockPreview, .finderMenu, .appInput].contains(self) }
 
-  /// 新装默认开着的四个（功能管理拍板 M4）
-  static let core: Set<Feature> = [.clipboard, .launcher, .translate, .screenshot]
+  /// 新装默认开着的（功能管理拍板 M4；2026-11-17 加了 OCR，和翻译一样是新装就该能用的）
+  static let core: Set<Feature> = [.clipboard, .launcher, .translate, .ocr, .screenshot]
 
   /// 启动时最先做（在 Prefs.registerDefaults 之前，持久域之外还没有别的值）：新装把每个功能的开关明写进偏好，core 那四个开、
   /// 别的关（M5）。新装 = 还没看过任何一版（Prefs.lastSeenVersion 空）、引导也没开过（Prefs.onboardingScreen 空：0.7.1 起

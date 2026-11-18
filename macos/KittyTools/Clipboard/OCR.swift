@@ -28,12 +28,15 @@ nonisolated enum OCR {
   /// 截图翻译、识字：带行框的一行行（Vision 顺序，左右分栏时先左栏后右栏；同一行被拆开的碎块已经接回去，见 mergingRows）；
   /// 识别失败 nil、没有文字 []
   /// droppingIcons：先去掉图标被认成的单字（droppingIconLines，只有截图翻译盖回截图上时要）
-  @concurrent static func recognizeLines(in image: CGImage, droppingIcons: Bool = false) async
-    -> [Line]?
-  {
+  /// languages：识别语言提示（OCR 浮窗选了语言才给；空 = 自动识别，同截图翻译 / 识字）
+  @concurrent static func recognizeLines(
+    in image: CGImage, droppingIcons: Bool = false, languages: [String] = []
+  ) async -> [Line]? {
     enter()
     defer { leave() }
-    guard let observations = try? await request().perform(on: image) else { return nil }
+    guard let observations = try? await request(languages: languages).perform(on: image) else {
+      return nil
+    }
     let lines = observations.compactMap { observation -> Line? in
       guard let candidate = observation.topCandidates(1).first else { return nil }
       let text = candidate.string.trimmingCharacters(in: .whitespaces)
@@ -150,13 +153,14 @@ nonisolated enum OCR {
   }
 
   /// 只开自动识别语种、不给语言提示。实测：写死简中 / 繁中 / 英文会丢日文假名、韩文识别为空、
-  /// 俄文变拉丁乱码（PLAN §11 #21）；给第一 / 第二语言作提示，中日韩混排图里日文、韩文整行丢失
-  private static func request() -> RecognizeTextRequest {
+  /// 俄文变拉丁乱码（PLAN §11 #21）；给第一 / 第二语言作提示，中日韩混排图里日文、韩文整行丢失。
+  /// languages：OCR 浮窗里明确选了语言才给（用户自己指定，和「自动」不一样）
+  private static func request(languages: [String] = []) -> RecognizeTextRequest {
     var request = RecognizeTextRequest()
     request.recognitionLevel = .accurate  // .fast 不支持中日韩
     request.usesLanguageCorrection = true
-    request.automaticallyDetectsLanguage = true
-    request.recognitionLanguages = []
+    request.automaticallyDetectsLanguage = languages.isEmpty
+    request.recognitionLanguages = languages.map { Locale.Language(identifier: $0) }
     return request
   }
 

@@ -295,10 +295,10 @@ struct ShortcutsSheet: View {
         title: "剪贴板", symbol: HotKeyAction.clipboard.symbol, color: Style.Family.clipboard,
         globals: [.clipboard],
         entries: [
-          Entry("↩", text: "粘贴选中的条目（双击同样，设置里可改成点一下就粘贴；多选时全是文本合并、全是文件一起粘贴，其余依次粘贴）"),
-          Entry("⌥↩", text: "粘贴为纯文本（打开「默认粘贴为纯文本」后是保留格式粘贴）"),
+          Entry("↩", text: "确认所选条目，双击同样。在设置中开启「确认条目时仅复制」后，复制并收起面板"),
+          Entry("⌥↩", text: "用另一种文本格式确认（纯文本或保留格式）"),
           Entry("⌘↩", "⌘C", text: "只复制，不粘贴"),
-          Entry("⌘1–9", text: "直接粘贴第 1–9 条"),
+          Entry("⌘1–9", text: "按设置复制或粘贴第 1–9 条"),
           Entry("↑↓", text: "移动选中，透镜跟着走"),
           Entry("⇧↑↓", text: "扩展多选（⇧ 单击选一段，⌘ 单击逐条勾选）"),
           Entry("Tab", text: "打开 / 关闭筛选面板（范围、收藏夹、类型、来源）"),
@@ -377,7 +377,10 @@ struct ShortcutsSheet: View {
       // mac-translate「浮窗快捷键」「翻译浮窗」（N5–N6）；代码在 TranslateCoordinator.handleKeyEquivalent、SourceTextView
       Group(
         title: "翻译", symbol: SettingsPage.translate.symbol, color: Style.Family.translate,
-        globals: [.selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate],
+        globals: [
+          .selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate,
+          .imageTranslate,
+        ],
         entries: [
           Entry("↩", text: "翻译"),
           Entry("⇧↩", "⌘↩", text: "换行"),
@@ -407,6 +410,18 @@ struct ShortcutsSheet: View {
           Entry("⌘D", text: "收藏 / 取消收藏这条"),
           Entry("⌘⌫", text: "删除（⌘Z 撤销）"),
           Entry("Esc", text: "先关操作菜单，再清空搜索，最后回到浮窗"),
+        ]),
+      // OCR 浮窗（2026-11-17，照 Bob 的 OCR）；代码在 OCRCoordinator.handleKeyEquivalent
+      Group(
+        title: "OCR", symbol: SettingsPage.ocr.symbol, color: Style.Family.ocr,
+        features: [.ocr], globals: [.screenshotOCR],
+        entries: [
+          Entry("⌘R", text: "重新识别（同一个选区再来一遍）"),
+          Entry("⌘1–9", text: "复制第 1–9 个服务的结果"),
+          Entry("⌘E", text: "导出识别结果…"),
+          Entry("⌘P", text: "固定 / 取消固定浮窗（固定后点别处不收起）"),
+          Entry("⌘,", text: "打开 设置 › OCR"),
+          Entry("Esc", "⌘W", text: "关闭（固定着也关）"),
         ]),
       // mac-whisker §6 截图「待选」「框选 / 拖边」「键盘调整」；代码在 SelectionView.keyDown
       Group(

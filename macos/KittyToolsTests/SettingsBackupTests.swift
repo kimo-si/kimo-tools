@@ -277,7 +277,8 @@ struct SettingsBackupTests {
     snippet.text = "您好 {cursor}，"
     snippet.isSnippet = true
     let archive = SettingsArchive.capture(
-      from: defaults, domainName: name, services: [.zhipu, ai], clips: [snippet], notes: [],
+      from: defaults, domainName: name, services: [.zhipu, ai], ocrServices: [.builtin(.apple)],
+      clips: [snippet], notes: [],
       version: "9.9.9", now: Self.moment())
     let payload = try #require(SettingsBackup.payload(of: archive))
     #expect(payload.note == nil)

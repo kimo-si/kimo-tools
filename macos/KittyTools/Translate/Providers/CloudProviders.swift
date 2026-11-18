@@ -40,12 +40,13 @@ nonisolated enum Volcengine {
     }
   }
 
-  /// 签名：规范请求（4 个头）→ 待签字符串 → 用 Secret Key 逐级派生（日期 → 区域 → 服务 → request）
-  static func headers(accessKey: String, secretKey: String, body: Data, date: Date) -> [String:
-    String]
-  {
+  /// 签名：规范请求（4 个头）→ 待签字符串 → 用 Secret Key 逐级派生（日期 → 区域 → 服务 → request）。
+  /// 默认是翻译的 open.volcengineapi.com；OCR（OCRProviders）传自己的 host、query、service 和 content-type
+  static func headers(
+    accessKey: String, secretKey: String, body: Data, date: Date, host: String = host,
+    query: String = query, service: String = "translate", contentType: String = "application/json"
+  ) -> [String: String] {
     let region = "cn-north-1"
-    let service = "translate"
     let xDate = date.formatted(
       Date.VerbatimFormatStyle(
         format:
@@ -56,7 +57,7 @@ nonisolated enum Volcengine {
     let signedHeaders = "content-type;host;x-content-sha256;x-date"
     let canonicalRequest = [
       "POST", "/", query,
-      "content-type:application/json\nhost:\(host)\nx-content-sha256:\(bodyHash)\nx-date:\(xDate)\n",
+      "content-type:\(contentType)\nhost:\(host)\nx-content-sha256:\(bodyHash)\nx-date:\(xDate)\n",
       signedHeaders, bodyHash,
     ].joined(separator: "\n")
     let scope = "\(shortDate)/\(region)/\(service)/request"
@@ -69,7 +70,7 @@ nonisolated enum Volcengine {
     return [
       "Authorization":
         "HMAC-SHA256 Credential=\(accessKey)/\(scope), SignedHeaders=\(signedHeaders), Signature=\(signature)",
-      "Content-Type": "application/json", "Host": host, "X-Content-Sha256": bodyHash,
+      "Content-Type": contentType, "Host": host, "X-Content-Sha256": bodyHash,
       "X-Date": xDate,
     ]
   }
@@ -121,10 +122,13 @@ nonisolated enum Tencent {
     }
   }
 
-  /// TC3-HMAC-SHA256：签名头 content-type;host；密钥派生 "TC3"+SecretKey → 日期(UTC) → tmt → tc3_request
-  static func headers(secretID: String, secretKey: String, body: Data, timestamp: Int) -> [String:
-    String]
-  {
+  /// TC3-HMAC-SHA256：签名头 content-type;host；密钥派生 "TC3"+SecretKey → 日期(UTC) → 服务 → tc3_request。
+  /// 默认是翻译的 tmt；OCR（OCRProviders）传自己的 host、service、action、version 和地域
+  static func headers(
+    secretID: String, secretKey: String, body: Data, timestamp: Int, host: String = host,
+    service: String = "tmt", action: String = "TextTranslate", version: String = "2018-03-21",
+    region: String = "ap-beijing"
+  ) -> [String: String] {
     let contentType = "application/json; charset=utf-8"
     let date = Date(timeIntervalSince1970: TimeInterval(timestamp)).formatted(
       Date.VerbatimFormatStyle(
@@ -134,19 +138,18 @@ nonisolated enum Tencent {
       "POST", "/", "", "content-type:\(contentType)\nhost:\(host)\n", "content-type;host",
       Signing.sha256(body),
     ].joined(separator: "\n")
-    let scope = "\(date)/tmt/tc3_request"
+    let scope = "\(date)/\(service)/tc3_request"
     let stringToSign = [
       "TC3-HMAC-SHA256", String(timestamp), scope, Signing.sha256(Data(canonicalRequest.utf8)),
     ].joined(separator: "\n")
     var key = Data(("TC3" + secretKey).utf8)
-    for part in [date, "tmt", "tc3_request"] { key = Signing.hmac(key, part) }
+    for part in [date, service, "tc3_request"] { key = Signing.hmac(key, part) }
     let signature = Signing.hex(Signing.hmac(key, stringToSign))
     return [
       "Authorization":
         "TC3-HMAC-SHA256 Credential=\(secretID)/\(scope), SignedHeaders=content-type;host, Signature=\(signature)",
-      "Content-Type": contentType, "Host": host, "X-TC-Action": "TextTranslate",
-      "X-TC-Timestamp": String(timestamp), "X-TC-Version": "2018-03-21",
-      "X-TC-Region": "ap-beijing",
+      "Content-Type": contentType, "Host": host, "X-TC-Action": action,
+      "X-TC-Timestamp": String(timestamp), "X-TC-Version": version, "X-TC-Region": region,
     ]
   }
 

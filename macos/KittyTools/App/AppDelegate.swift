@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var audioRecorder: AudioRecorder?
   /// 退出时在等录屏 / 录音收尾（applicationShouldTerminate 返回了 .terminateLater）
   private var quitsAfterRecording = false
+  private var quitsAfterEditionSync = false
   /// 上次按功能开关（Feature）起停过的样子和那时复制即译开没开（剪贴板的轮询看它）：applyFeatures 只对变了的做事；
   /// nil = 还没起过（启动时）
   private var appliedFeatures: Set<Feature>?
@@ -111,6 +112,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let serviceStore = TranslateServiceStore()
   private lazy var coordinator = TranslateCoordinator(services: serviceStore, history: historyStore)
   private let speaker = Speaker()
+  /// OCR（2026-11-17）：服务列表、会话；浮窗在下面（ocrPanel）
+  private let ocrServiceStore = OCRServiceStore()
+  private lazy var ocrCoordinator = OCRCoordinator(services: ocrServiceStore)
   /// 刘海岛（全局轻提示）
   private let island = Island()
   /// 刘海岛上的系统一瞬提示（电源、电量、耳机、网络；设置 › 刘海岛「系统提示」，开着的才监听）
@@ -211,11 +215,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       statusPicker.panel?.hide()
       noteCapture?.panel.hide()
       builtTranslatePanel?.hide()
+      builtOCRPanel?.hide()
     }
     return board
   }()
   /// 程序坞预览（第九族，2026-10-22，PLAN §10「程序坞预览」）：鼠标停在程序坞的 App 图标上弹出它所有窗口的缩略图。
   /// 功能开关开着才起（默认关）；启动台开着、状态屏、截图框选时不弹。设置 › 程序坞预览。
+  private let appInput = AppInputController()
   private lazy var dockPreview: DockPreview = {
     let preview = DockPreview()
     preview.isSuppressed = { [unowned self] in
@@ -294,7 +300,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             leading: Island.thumbnail(of: image), actions: .file(saved.url))
         case .saveAs: await saveImageAs(image, scale: scale)
         case .recognize: await copyRecognizedText(in: image)
-        case .translate: await translateInPanel(image)
+        case .translate: translateInPanel(image)
         case .pin: break
         }
       }
@@ -416,6 +422,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private weak var builtLauncherPanel: OverlayPanel?
   private weak var builtClipboardPanel: OverlayPanel?
   private weak var builtTranslatePanel: OverlayPanel?
+  private weak var builtOCRPanel: OverlayPanel?
 
   private lazy var launcherPanel: OverlayPanel = {
     let model = launcherModel
@@ -695,6 +702,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return panel
   }()
 
+  /// OCR 浮窗（⌥⇧O）：和翻译浮窗同一套面板、同一个高度算法，位置、宽度、最高多高各有自己的偏好
+  private lazy var ocrPanel: OverlayPanel = {
+    weak var created: OverlayPanel?
+    let panel = OverlayPanel(
+      size: NSSize(width: OCRPanelView.defaultWidth, height: 560),
+      minSize: NSSize(width: 360, height: 200),
+      frameName: "OCRPanel", autoHide: .resignKey,
+      isPinned: { UserDefaults.standard.bool(forKey: Prefs.floatingPinned) },
+      content: AnyView(
+        OCRPanelView(
+          coordinator: ocrCoordinator,
+          resize: { height, mustFit in
+            guard let panel = created else { return }
+            let visible = (panel.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
+            let height = TranslatePanelView.panelHeight(
+              height, mustFit: mustFit, visible: visible,
+              cap: UserDefaults.standard.double(forKey: Prefs.ocrPanelMaxHeight))
+            panel.minSize = NSSize(width: 360, height: height)
+            panel.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: height)
+            panel.setContentHeight(height, animated: abs(panel.frame.height - height) >= 8)
+          }
+        )))
+    created = panel
+    panel.widthKey = Prefs.ocrPanelWidth
+    panel.heightRange = { [weak panel] in
+      let visible = (panel?.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
+      return OCRPanelView.minHeight...max(visible - 24, OCRPanelView.minHeight)
+    }
+    panel.heightDragged = { height in
+      UserDefaults.standard.set(Double(height), forKey: Prefs.ocrPanelMaxHeight)
+    }
+    panel.keyEquivalentHandler = { [unowned self] in ocrCoordinator.handleKeyEquivalent($0) }
+    ocrCoordinator.openSettings = { [unowned self] service in
+      showSettings(page: .ocr)
+      // 设置窗开着速查表 / 确认框时不换页（同翻译浮窗的错误卡）
+      if let service, settingsNavigation.page == .ocr { settingsNavigation.path = [service] }
+    }
+    ocrCoordinator.isPanelKey = { [unowned panel] in panel.isKeyWindow }
+    panel.onHide = { [unowned self, unowned panel] in
+      ocrCoordinator.cancel()
+      if NSApp.keyWindow == nil, let previous = panel.previousKeyPanel, previous.isVisible {
+        previous.makeKey()
+      }
+      idleReclaim.schedule()
+    }
+    panel.squeezesIn = { Self.squeezesIn() }
+    builtOCRPanel = panel
+    return panel
+  }()
+
   private func showQuickLook() {
     guard let item = clipboardModel.selectedItem else { return }
     // 右键菜单 / 无障碍的「放大预览」同一拍里先换选中再打开：先让面板把布局做完，新选中的透镜才报上位置
@@ -753,6 +810,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           GeneralTab(
             transfer: SettingsTransfer(
               services: serviceStore, clipboard: clipboardStore, history: historyStore,
+              ocrServices: ocrServiceStore,
               notes: { [unowned self] in noteStore },
               applied: { [unowned self] in settingsImported() },
               backupFolder: Backup.folder(in: dataDirectory),
@@ -804,10 +862,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .reminders: AnyView(RemindersTab())
       case .dockPreview: AnyView(DockPreviewTab())
       case .finderMenu: AnyView(FinderMenuTab())
+      case .defaultApps: AnyView(DefaultAppsTab())
+      case .appInput: AnyView(AppInputTab())
       case .translate:
         AnyView(
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)
             .environment(island))
+      case .ocr:
+        AnyView(OCRTab(services: ocrServiceStore))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
       case .about:
         // 开发版（bundle id 不同）不更新，不显示更新那一行
@@ -1118,6 +1180,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 启动时调一次（只起开着的，不碰关着的功能），之后偏好一变就调，只对变了的功能做事；数据层（库、备份、到期清理）不动
   private func applyFeatures() {
     let now = Feature.enabled
+    // 输入法规则跟插件开关、设置导入和同步一起更新。
+    appInput.configure(enabled: now.contains(.appInput))
     let copyToTranslate = UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate)
     let before = appliedFeatures
     let placement = Prefs.ShotPlacement.current()
@@ -1214,6 +1278,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       replaceTask?.cancel()
       replaceTask = nil
     }
+    if turnedOff.contains(.ocr) {
+      builtOCRPanel?.hide()
+      ocrCoordinator.cancel()
+    }
     if turnedOff.contains(.screenshot) {
       if !pins.panels.isEmpty { pins.closeAll() }
       clothesline.stop()
@@ -1280,6 +1348,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           symbol: "arrow.triangle.2.circlepath.circle.fill", actions: [openSyncSettings])
       }
       let settings = SettingsSync(applied: { [unowned self] in
+        // 本机版本同步可能改了正在使用的 OCR 服务列表。
+        ocrServiceStore.reloadFromPreferences()
         // 换了保留天数、图片上限这些，清掉了历史的说一声（不然无声少了东西）
         let pruned = settingsImported()
         if pruned > 0 {
@@ -1352,7 +1422,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 快速记一条停手不到 1 秒的草稿（E2）
     noteCapture?.model.saveDraft()
     closeReadyAudio()  // 待录的录音控制条没有东西要收尾：直接收掉，不等它回调
-    guard recorder != nil || audioRecorder != nil else { return .terminateNow }
+    guard recorder != nil || audioRecorder != nil else { return quitAfterEditionSync() }
     quitsAfterRecording = true
     recorder?.stop()
     audioRecorder?.stop()
@@ -1363,6 +1433,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       NSApp.reply(toApplicationShouldTerminate: true)
     }
     return .terminateLater
+  }
+
+  /// 切换 Dev 和正式版时，正常退出前给本机同步一次写入机会。
+  private func quitAfterEditionSync() -> NSApplication.TerminateReply {
+    guard let noteSyncer, noteSyncer.usesEditionSync else { return .terminateNow }
+    guard !quitsAfterEditionSync else { return .terminateLater }
+    quitsAfterEditionSync = true
+    let sync = Task { [self] in
+      await noteSyncer.flushEditionSync()
+      finishEditionSyncQuit()
+    }
+    Task { [self] in
+      try? await Task.sleep(for: .seconds(3))
+      guard quitsAfterEditionSync else { return }
+      sync.cancel()
+      finishEditionSyncQuit()
+    }
+    return .terminateLater
+  }
+
+  /// 同步完成或等待到期，只向 AppKit 回复一次。
+  private func finishEditionSyncQuit() {
+    guard quitsAfterEditionSync else { return }
+    quitsAfterEditionSync = false
+    NSApp.reply(toApplicationShouldTerminate: true)
   }
 
   /// 退出前把便签攒着没落盘的改动落下去（应用内更新的重启也走这里：Updater.install 调的是 NSApp.terminate）。
@@ -1390,6 +1485,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationWillTerminate(_ notification: Notification) {
     guard isRunning else { return }
+    // 停止监听前台 App 并取消尚未执行的输入法切换。
+    appInput.configure(enabled: false)
     FileMoves.forgetCut()  // 访达右键剪切的清单只在内存里：退出后扩展别再列「粘贴」
     statusScreen.exit(.quit)  // 在状态屏里被要求退出（远程、脚本）：拦截当场撤掉
     // 便签：applicationShouldTerminate 已经落过、落不下去也问过了；这里再落一次兜着之后才有的改动（等录屏收尾的那几秒）
@@ -1469,6 +1566,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       builtClipboardPanel?.hide()
       statusPicker.panel?.hide()
       noteCapture?.panel.hide()
+      builtOCRPanel?.hide()
     }
     let appearing = !launcherPanel.isVisible
     if appearing {
@@ -1500,6 +1598,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     builtLauncherPanel?.hide()
     statusPicker.panel?.hide()
     noteCapture?.panel.hide()
+    builtOCRPanel?.hide()
     refreshHome(appearing: !homePanel.isVisible)
     homePanel.present(atTop: icon == nil, below: icon)
   }
@@ -1540,6 +1639,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       builtClipboardPanel?.hide()
       builtLauncherPanel?.hide()
       statusPicker.panel?.hide()
+      builtOCRPanel?.hide()
     }
     if !capture.panel.isVisible {
       capture.model.prepareForShow()
@@ -1713,6 +1813,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .inputTranslate: showInputTranslate()
     case .translateReplace: translateAndReplace()
     case .screenshotTranslate: screenshotTranslate()
+    case .imageTranslate: imageTranslate()
+    case .screenshotOCR: screenshotOCR()
     case .screenshot: screenshot()
     case .screenshotLastRegion: screenshot(repeatingLastRegion: true)
     case .recognizeText: recognizeText()
@@ -1965,6 +2067,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 翻译浮窗出现（划词、截图翻译、复制即译、剪贴板「翻译」）：设置 › 翻译「浮窗位置」是屏幕上方（默认，2026-10-29 用户要求）时
   /// 放在鼠标所在屏的上方正中（同启动器的位置），跟随鼠标时放在光标右下，上次位置时在上次拖到的地方（体检 A13）
   private func presentTranslate(makingKey: Bool = true) {
+    // 翻译和 OCR 是两块浮窗，同一时刻只留一块（OCR 自己出现时也会收起翻译）
+    builtOCRPanel?.hide()
     let position = Self.translatePosition
     translatePanel.present(
       makingKey: makingKey, anchor: position == "mouse" ? NSEvent.mouseLocation : nil,
@@ -1974,6 +2078,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 「浮窗位置」：top（屏幕上方）/ mouse（跟随鼠标）/ last（上次位置）；认不出的值按默认的屏幕上方
   private static var translatePosition: String {
     let value = UserDefaults.standard.string(forKey: Prefs.translatePanelPosition)
+    return value == "mouse" || value == "last" ? value! : "top"
+  }
+
+  /// OCR 浮窗出现：同一个位置规则，偏好是自己的（设置 › OCR「浮窗位置」）
+  private func presentOCR() {
+    // 同一时刻只留一块浮窗（同 presentTranslate）
+    builtTranslatePanel?.hide()
+    let position = Self.ocrPosition
+    ocrPanel.present(
+      makingKey: true, anchor: position == "mouse" ? NSEvent.mouseLocation : nil,
+      atTop: position == "top")
+  }
+
+  private static var ocrPosition: String {
+    let value = UserDefaults.standard.string(forKey: Prefs.ocrPanelPosition)
     return value == "mouse" || value == "last" ? value! : "top"
   }
 
@@ -2034,6 +2153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if noteCapture?.panel.isKeyWindow == true { noteCapture?.panel.hide() }
     statusPicker.panel?.hide()
     if translatePanel.isKeyWindow { translatePanel.orderOut(nil) }
+    if ocrPanel.isKeyWindow { ocrPanel.orderOut(nil) }
     Task {
       defer { isReadingSelection = false }
       if let note {
@@ -2190,22 +2310,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// 截图翻译（⌥S）。默认：冻结各屏 → 框选 → 本机识别文字 → 原文记进剪贴板历史 → 翻译浮窗走现有的多服务翻译。
-  /// 设置 › 翻译 开着「把译文直接盖回截图上」（PR #5）时：和截图同一个编辑页，框完松手自动翻译——译文贴在选区里，
-  /// 人可以接着标注、复制、保存
+  /// 截图翻译（⌥S）：框选松手先弹翻译浮窗，等本机识字后再逐步显示译文。
   func screenshotTranslate() {
-    guard UserDefaults.standard.bool(forKey: Prefs.translateScreenshotOverlay) else {
-      return beginCapture(hidingPanels: true) { [self] in
-        guard
-          let region = await frozenSelection(
-            "截图翻译", { await RegionSelector.select($0, hint: "拖动框选要翻译的文字 · Esc 取消") })
-        else { return }
-        await translateInPanel(region)
-      }
+    beginCapture(hidingPanels: true) { [self] in
+      // 等框选遮罩收好，再把选区交给浮窗，识字不占用截图会话。
+      guard
+        let region = await frozenSelection(
+          "截图翻译", { await RegionSelector.select($0, hint: "拖动框选要翻译的文字 · Esc 取消") })
+      else { return }
+      translateInPanel(region)
     }
+  }
+
+  /// 原图翻译（⌥⇧S，2026-11-17，照 Bob 的截图翻译）：冻结各屏 → 框选 → 就地识别翻译、译文按原来的位置盖回图上，
+  /// 留在截图页里（能看原文 / 换回译文、接着标注、复制、保存），**不开翻译浮窗**。不管 设置 › 翻译 里
+  /// 「把译文直接盖回截图上」开没开——这个入口就是要在原图上翻。
+  func imageTranslate() {
     captureShots(
-      feature: "截图翻译", hidingPanels: true,
+      feature: "原图翻译", hidingPanels: true,
       hint: "拖动框选要翻译的文字 · Esc 取消", autoTranslate: true)
+  }
+
+  /// 截图 OCR（⌥⇧O，2026-11-17，照 Bob 的截图 OCR）：冻结各屏 → 框选 → 在 OCR 浮窗里用选定的服务识别。
+  /// 和「识字」的区别：识字只静默复制（本机 Apple 一家），这里弹浮窗、能选服务商、看每个服务的结果。
+  func screenshotOCR() {
+    beginCapture(hidingPanels: true) { [self] in
+      guard
+        let region = await frozenSelection(
+          "OCR", { await RegionSelector.select($0, hint: "拖动框选要识别的文字 · Esc 取消") })
+      else { return }
+      ocrCoordinator.recognize(region)
+      presentOCR()
+    }
   }
 
   /// 识字：框选后静默复制识别出的文字（有二维码 / 条码时复制它的内容），轻提示结果，不弹窗
@@ -2226,14 +2362,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       feature: "截图", hidingPanels: false, repeatingLastRegion: repeatingLastRegion)
   }
 
-  /// 截图家族共用的后半段（截图、截图翻译）：冻结各屏 → 框选 → 按交回的动作出图。
-  /// hint 非空时换掉遮罩顶上的提示；autoTranslate = 框完松手就自动翻译（⌥S）
+  /// 截图和原图翻译共用的编辑页：冻结各屏 → 框选 → 按交回的动作出图。
+  /// hint 非空时换掉遮罩顶上的提示；autoTranslate = 框完松手就盖回译文（⌥⇧S）。
   private func captureShots(
     feature: String, hidingPanels: Bool, repeatingLastRegion: Bool = false,
     hint: String? = nil, autoTranslate: Bool = false
   ) {
-    // 工具栏「翻译」就地盖回截图上，还是交出去走翻译浮窗：看设置 › 翻译「把译文直接盖回截图上」
-    let overlays = UserDefaults.standard.bool(forKey: Prefs.translateScreenshotOverlay)
+    // 原图翻译总是盖回；普通截图的工具栏「翻译」由设置决定。
+    let overlays =
+      autoTranslate || UserDefaults.standard.bool(forKey: Prefs.translateScreenshotOverlay)
     let translate: ((CGImage, CGFloat) async -> ScreenshotOverlay.Outcome)?
     if overlays {
       translate = {
@@ -2308,8 +2445,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           markSaved(remembered, at: saved)
         }
       case .recognize: await copyRecognizedText(in: capture.image)
-      // 「把译文直接盖回截图上」关着时：工具栏的翻译交出来，走翻译浮窗（开着时在截图页里就地翻，不交回这个动作）
-      case .translate: await translateInPanel(capture.image)
+      // 工具栏设为在浮窗翻译时，先开浮窗再识字。
+      case .translate: translateInPanel(capture.image)
       }
     }
   }
@@ -2875,6 +3012,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     noteCapture?.panel.hide()  // 快速记一条也没有（草稿留着）
     builtTranslatePanel?.hideUnlessPinned()
     noteEdge?.suspend(.unlessPinned)  // 屏幕边缘打开着的便签同理：没固定的收（先落盘）
+    builtOCRPanel?.hideUnlessPinned()
   }
 
   /// 有「屏幕录制」授权（截图家族、录系统声音开始前查）；没有就同设置 › 通用、引导里的授权按钮：请求一次（系统框只弹一次，
@@ -2923,61 +3061,113 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return result
   }
 
-  /// 本机识别文字 → 原文记进剪贴板历史 → 现有的多服务翻译浮窗（钉图上的翻译走这里）。
-  /// 总是按段送去翻（体检 A32：同一段的行接起来、段间空一行，不看「接起来」开关）
-  private func translateInPanel(_ image: CGImage) async {
-    guard let recognized = await recognizeForTranslation(image) else { return }
-    coordinator.translate(recognized.text)
+  /// 打开翻译浮窗后在后台识字，完成后走现有的多服务流式翻译（截图、钉图共用）。
+  private func translateInPanel(_ image: CGImage) {
+    // 把识字任务挂到当前浮窗会话上，收起或换原文时就能作废它。
+    coordinator.recognizeScreenshot { [self] in
+      defer { idleReclaim.schedule() }
+      do {
+        let result = try await recognizeTranslationImage(image, requiresLayout: false)
+        try Task.checkCancellation()
+        let text =
+          result.regions.count == result.lines
+          ? OCR.text(result.regions, joined: true, separator: "\n\n") : result.text
+        return recordRecognizedTranslation(text)
+      } catch {
+        if !Task.isCancelled {
+          island.show("文字识别失败", detail: error.localizedDescription, tone: .error)
+        }
+        return nil
+      }
+    }
     presentTranslate()
   }
 
-  /// 就地翻译（截图工具栏「翻译」用）：识别 + 逐段翻译 + 覆盖渲染，交回贴了译文的图和放不下的段。
-  /// pixelsPerPoint 是选区图每点几个像素（字号下限按点算）。
-  /// 失败时消息交回遮罩上的提示，岛上另外说一遍（收起遮罩后也能看到原因）
+  /// 原图翻译的入口：记录各阶段耗时，失败交回遮罩提示，取消后不合成旧结果。
   private func overlayTranslate(_ image: CGImage, pixelsPerPoint: CGFloat) async
     -> ScreenshotOverlay.Outcome
   {
-    // 图标被认成的单字（首页的剪贴板图标认成「目」）不翻、不擦（拍板 F1）
-    guard let recognized = await recognizeForTranslation(image, droppingIcons: true) else {
-      return .init(message: "识别失败")
+    let trace = TranslationTrace()
+    defer { trace.record(.total, since: trace.started) }
+    guard let recognized = await recognizeForTranslation(image, droppingIcons: true, trace: trace)
+    else {
+      return .init(message: Task.isCancelled ? "已取消" : "识别失败")
     }
-    let segments = await ScreenshotOverlay.prepareSegments(of: recognized.lines, in: image)
-    guard !segments.isEmpty else { return .init(message: "没有识别到文字") }
     do {
-      let translations = try await translateSegments(segments, source: recognized.text)
-      var composed = await ScreenshotOverlay.render(
-        image, segments: segments, translations: translations, pixelsPerPoint: pixelsPerPoint)
-      guard composed.image != nil || !composed.leftovers.isEmpty else {
-        return .init(message: "合成失败")
-      }
-      // 卡片的「拷贝译文」拷全部段（纯符号段原样占位，不算）
-      composed.translation = zip(segments, translations)
-        .filter { ScreenshotOverlay.hasTranslatableContent($0.0.text) }
-        .map { $0.1.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .joined(separator: "\n\n")
-      return composed
+      try Task.checkCancellation()
+      let started = ContinuousClock.now
+      let segments = await ScreenshotOverlay.prepareSegments(of: recognized.lines, in: image)
+      trace.record(.segmentation, since: started, count: segments.count)
+      guard !segments.isEmpty else { return .init(message: "没有识别到文字") }
+      // 网络结果按段保留；单段失败不会丢掉其他段已经完成的译文。
+      return try await composeTranslation(
+        image, segments: segments, source: recognized.text, pixelsPerPoint: pixelsPerPoint,
+        trace: trace)
     } catch {
-      guard !Task.isCancelled, !(error is CancellationError) else {
-        return .init(message: "已取消")
-      }
+      guard !Task.isCancelled, !(error is CancellationError) else { return .init(message: "已取消") }
       island.show("翻译失败", detail: error.localizedDescription, tone: .error)
       return .init(message: error.localizedDescription)
     }
   }
 
-  /// 截图翻译和钉图的翻译共用的那一半：识别 + 原文记进剪贴板历史（设置 › 翻译 开着「截图翻译时复制识别出的原文」
-  /// 时同时写进剪贴板）。返回 nil 时岛上已经说过原因
-  private func recognizeForTranslation(_ image: CGImage, droppingIcons: Bool = false) async
+  /// 翻译与合成分别计时；失败段给空译文，排版和去字都保留它的原文区域。
+  private func composeTranslation(
+    _ image: CGImage, segments: [ScreenshotOverlay.Segment], source: String,
+    pixelsPerPoint: CGFloat, trace: TranslationTrace
+  ) async throws -> ScreenshotOverlay.Outcome {
+    try Task.checkCancellation()
+    let plan = TranslateCoordinator.plan(for: source, wordMode: false).request
+    let batch = try await translateSegments(segments, plan: plan, trace: trace)
+    try Task.checkCancellation()
+    let rendering = ContinuousClock.now
+    let composed = await ScreenshotOverlay.render(
+      image, segments: segments, translations: batch.translations, pixelsPerPoint: pixelsPerPoint)
+    trace.record(.render, since: rendering)
+    try Task.checkCancellation()
+    // 合成完成且未取消之后才写历史；部分成功仍可显示，但不进入完整翻译历史。
+    return finishImageTranslation(
+      composed, batch: batch, segments: segments, source: source, target: plan.to)
+  }
+
+  /// 汇总成功段落的复制内容和提示，确保失败段不会冒充译文。
+  private func finishImageTranslation(
+    _ outcome: ScreenshotOverlay.Outcome, batch: ScreenshotTranslation.Batch,
+    segments: [ScreenshotOverlay.Segment], source: String, target: Lang
+  ) -> ScreenshotOverlay.Outcome {
+    var composed = outcome
+    guard composed.image != nil || !composed.leftovers.isEmpty else {
+      return .init(message: "合成失败")
+    }
+    composed.translation = zip(segments, batch.translations)
+      .filter { ScreenshotOverlay.hasTranslatableContent($0.0.text) && !$0.1.isEmpty }
+      .map { $0.1.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .joined(separator: "\n\n")
+    composed.message = batch.notice
+    recordImageTranslation(batch, source: source, target: target)
+    return composed
+  }
+
+  /// 原图翻译的识字与进度提示。返回 nil 时岛上已经说过原因。
+  private func recognizeForTranslation(
+    _ image: CGImage, droppingIcons: Bool = false, trace: TranslationTrace
+  ) async
     -> (lines: [OCR.Line], text: String)?
   {
-    guard
-      let lines = await recognizing({
-        await OCR.recognizeLines(in: image, droppingIcons: droppingIcons)
-      })
-    else {
-      island.show("文字识别失败", detail: "请重试", tone: .error)
+    let started = ContinuousClock.now
+    defer { trace.record(.ocr, since: started) }
+    let result: OCRResult
+    do {
+      result = try await recognizeTranslationImage(image, requiresLayout: true)
+    } catch {
+      if !Task.isCancelled {
+        island.show("文字识别失败", detail: error.localizedDescription, tone: .error)
+      }
       return nil
     }
+    let size = CGSize(width: image.width, height: image.height)
+    let regions =
+      droppingIcons ? OCR.droppingIconLines(result.regions, imageSize: size) : result.regions
+    let lines = OCR.mergingRows(regions, imageSize: size)
     // 识别这段时间里会话可能已经被取消（用户按 Esc 收起截图）：这时不要再写剪贴板历史、也不往下翻
     guard !Task.isCancelled else { return nil }
     guard !lines.isEmpty else {
@@ -2987,120 +3177,88 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 没有结果岛（接着翻译、开浮窗）：「识别中」「正在准备」出过就收掉
     island.dismiss(ifShowing: Self.recognizingTitle)
     island.dismiss(ifShowing: Self.preparingTitle)
-    let text = OCR.text(lines, joined: true, separator: "\n\n")
+    return (lines, recordRecognizedTranslation(lines))
+  }
+
+  /// 截图翻译复用 OCR 服务与语言选择；云端路径不等 Vision 预热，也不在失败后偷偷上传给别家。
+  private func recognizeTranslationImage(_ image: CGImage, requiresLayout: Bool) async throws
+    -> OCRResult
+  {
+    let defaults = UserDefaults.standard
+    guard
+      let service = OCRService.selected(
+        in: ocrServiceStore.services, choice: defaults.string(forKey: Prefs.ocrService) ?? "")
+    else { throw TranslateError.config("请先在设置里启用一个 OCR 服务") }
+    let language = Lang(rawValue: defaults.string(forKey: Prefs.ocrLanguage) ?? "")
+    // 只有本机服务需要准备 Vision；远程错误保留原来的原因交回入口。
+    let result: Result<OCRResult, Error> = await recognizing(
+      preparesLocalModel: service.kind == .apple
+    ) {
+      do {
+        try Task.checkCancellation()
+        return .success(
+          try await service.recognizeForTranslation(
+            image, language: language, requiresLayout: requiresLayout))
+      } catch { return .failure(error) }
+    }
+    return try result.get()
+  }
+
+  /// 按段接回识别结果并记进剪贴板历史；按设置决定是否同时复制原文。
+  private func recordRecognizedTranslation(_ lines: [OCR.Line]) -> String {
+    recordRecognizedTranslation(OCR.text(lines, joined: true, separator: "\n\n"))
+  }
+
+  /// 云端与本机的识别文字共用复制、历史处理；不记录密钥或服务响应。
+  private func recordRecognizedTranslation(_ text: String) -> String {
+    guard !text.isEmpty else { return text }
     // 默认不写剪贴板、只记进历史（同一个入口：过敏感文本过滤、已有同文只挪到最前）；开了就当复制一次（写剪贴板 + 记历史）
     if UserDefaults.standard.bool(forKey: Prefs.translateCopyRecognized) {
       Paster.write(string: text, record: true)
     } else {
       Paster.recordText?(text)
     }
-    return (lines, text)
+    return text
   }
 
   /// 截图翻译盖回时的进度岛：和划词翻译并替换那条「翻译中…」分开（同名的话进度会写到那条上）
   private static let overlayTitle = "截图翻译中…"
 
-  /// 逐段翻译（原位覆盖用）：整段原文检测一次语种，各段用同一个方向；同时最多 3 段一起请求（inParallel），
-  /// 每段按顺序试启用的服务（没折叠的在前）。
-  /// 不走 coordinator.translate：那条路按服务写翻译历史，一块图拆成十几段会往历史里塞十几条碎片
+  /// 原图按同一个语言方向翻译；整图共享预算，只有完整成功的结果写入翻译历史。
   private func translateSegments(
-    _ segments: [ScreenshotOverlay.Segment], source: String
-  ) async throws -> [String] {
-    // 没折叠的服务先试（浮窗里折叠 = 不自动翻译，排第一的贵模型折叠了也不先用它）
-    let services = coordinator.orderedServices
-    guard !services.isEmpty else {
-      throw TranslateError(message: "没有启用的翻译服务，先在设置 › 翻译里开一个")
-    }
-    let plan = TranslateCoordinator.plan(for: source, wordMode: false).request
-    // 纯符号段不发请求（有道这类接口会回错误码，一段失败整张图就白翻了），原样占位；覆盖那一步也会跳过它
-    var results = segments.map(\.text)
-    let pending = segments.indices.filter {
-      ScreenshotOverlay.hasTranslatableContent(segments[$0].text)
-    }
-    // 同时最多 3 段一起请求（2026-11-08 第二轮拍板 G1：以前一段一段等，整屏十几段要十秒上下）：免费服务会限流，不开太多。
-    // 每段自己按启用顺序换服务，所有服务都失败才算整张图失败（同原来）
-    let requests = pending.map {
-      TranslateRequest(text: segments[$0].text, from: plan.from, to: plan.to)
-    }
-    // 要翻好几轮（段数多过同时请求的数）才出进度岛：一轮就翻完的不弹，免得一闪而过；翻完、失败、取消都收掉
-    let showsProgress = requests.count > Self.overlayConcurrency
+    _ segments: [ScreenshotOverlay.Segment], plan: TranslateRequest, trace: TranslationTrace
+  ) async throws -> ScreenshotTranslation.Batch {
+    let started = ContinuousClock.now
+    defer { trace.record(.api, since: started) }
+    let requests = segments.map { TranslateRequest(text: $0.text, from: plan.from, to: plan.to) }
+    let count = segments.filter { ScreenshotOverlay.hasTranslatableContent($0.text) }.count
+    let showsProgress = count > ScreenshotTranslation.concurrency
     if showsProgress {
-      island.show(
-        Self.overlayTitle, detail: "0/\(requests.count)", tone: .progress, symbol: "translate")
+      island.show(Self.overlayTitle, detail: "0/\(count)", tone: .progress, symbol: "translate")
     }
     defer { if showsProgress { island.dismiss(ifShowing: Self.overlayTitle) } }
-    let outputs = try await Self.inParallel(
-      requests.count, limit: Self.overlayConcurrency,
+    // 每完成一段（包括失败并保留原文的段）推进一次进度。
+    let batch = try await ScreenshotTranslation.translate(
+      requests, services: coordinator.orderedServices,
       finished: { [island] done in
-        if showsProgress { island.progress(Self.overlayTitle, detail: "\(done)/\(requests.count)") }
-      },
-      work: { index in try await Self.translateSegment(requests[index], services: services) })
-    for (index, output) in zip(pending, outputs) { results[index] = output.text }
-    // 历史里记的服务：按段的顺序第一个用上的那个（同原来串行时）
-    let used = outputs.first?.service
-    // 和浮窗那条一样记一份翻译历史（整段原文 + 整段译文），不然截图翻译在翻译历史里会凭空消失
-    if let used, UserDefaults.standard.bool(forKey: Prefs.translateHistoryEnabled) {
-      coordinator.history.add(
-        source: source, target: plan.to, result: results.joined(separator: "\n\n"),
-        service: used.name,
-        limit: UserDefaults.standard.integer(forKey: Prefs.translateHistoryLimit))
-    }
-    return results
+        if showsProgress { island.progress(Self.overlayTitle, detail: "\(done)/\(count)") }
+      })
+    guard batch.service != nil else { throw batch.failures.last ?? TranslateError.emptyResult }
+    try Task.checkCancellation()
+    return batch
   }
 
-  /// 截图翻译盖回时同时最多请求几段（第二轮 G1）
-  private static let overlayConcurrency = 3
-
-  /// 最多 limit 个一起跑、一个完成补下一个，结果按下标放回（第二轮 G1）；任何一个抛错就整个抛（其余的取消）。
-  /// finished(完成了几个) 每完成一个调一次（在调用方这边，可以直接动界面）。纯调度，配单测
-  static func inParallel<T: Sendable>(
-    _ count: Int, limit: Int, finished: (Int) -> Void = { _ in },
-    work: @escaping @Sendable (Int) async throws -> T
-  ) async throws -> [T] {
-    var results = [T?](repeating: nil, count: count)
-    try await withThrowingTaskGroup(of: (Int, T).self) { group in
-      var next = 0
-      var done = 0
-      func launch() {
-        guard next < count else { return }
-        let index = next
-        next += 1
-        group.addTask { (index, try await work(index)) }
-      }
-      for _ in 0..<max(1, limit) { launch() }
-      while let (index, value) = try await group.next() {
-        results[index] = value
-        done += 1
-        finished(done)
-        launch()
-      }
-    }
-    // 没抛错就每个位置都有值；真少了一个是这里写错了，别让它悄悄变短、对应的段留成原文
-    assert(!results.contains { $0 == nil }, "inParallel 有位置没填上")
-    return results.compactMap { $0 }
-  }
-
-  /// 一段：按启用顺序试服务，第一个出了非空译文的就用；都失败抛最后一个错误，取消照样往外抛
-  private nonisolated static func translateSegment(
-    _ request: TranslateRequest, services: [TranslateService]
-  ) async throws -> (text: String, service: TranslateService) {
-    var failure: Error = TranslateError(message: "翻译失败")
-    for service in services {
-      try Task.checkCancellation()
-      do {
-        var latest = ""
-        for try await partial in service.translate(request) { latest = partial }
-        try Task.checkCancellation()
-        guard !latest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-          throw TranslateError.emptyResult
-        }
-        return (latest, service)
-      } catch {
-        if error is CancellationError || Task.isCancelled { throw error }
-        failure = error
-      }
-    }
-    throw failure
+  /// 一张图只记一条历史，部分失败、全失败和取消都不写入。
+  private func recordImageTranslation(
+    _ batch: ScreenshotTranslation.Batch, source: String, target: Lang
+  ) {
+    guard batch.failures.isEmpty, let service = batch.service,
+      UserDefaults.standard.bool(forKey: Prefs.translateHistoryEnabled)
+    else { return }
+    coordinator.history.add(
+      source: source, target: target, result: batch.translations.joined(separator: "\n\n"),
+      service: service.name,
+      limit: UserDefaults.standard.integer(forKey: Prefs.translateHistoryLimit))
   }
 
   /// 识字慢的时候先出「识别中」（第二轮体检 R3）：常见选区 0.04–0.13 s，不出；整屏密集文字约 0.9 s，过了 0.3 s 还没出结果
@@ -3110,10 +3268,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 不然看着像卡死了
   private static let preparingTitle = "正在准备识字模型…"
 
-  private func recognizing<T>(_ work: () async -> T) async -> T {
+  private func recognizing<T>(preparesLocalModel: Bool = true, _ work: () async -> T) async -> T {
     // 进程内识过字，模型就留在内存里：这一路不一定开关面板（⌥O 识字、钉图上识字），自己记得回头放掉
     defer { idleReclaim.schedule() }
-    if !OCR.isPrepared() {
+    if preparesLocalModel && !OCR.isPrepared() {
       let note = "第一次识字要等一分钟左右，以后就快了"
       island.show(Self.preparingTitle, detail: note, tone: .progress, symbol: "text.viewfinder")
       let started = ContinuousClock.now
@@ -3388,6 +3546,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     statusPicker.panel?.hide()
     noteCapture?.panel.hide()
     builtTranslatePanel?.hide()
+    builtOCRPanel?.hide()
   }
 
   // MARK: 菜单栏菜单
@@ -3631,7 +3790,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 或者便签库刚查出有问题时不带便签这一类（不写一份空的、不全的把好的顶掉）
   private func currentArchive() -> SettingsArchive {
     .capture(
-      services: serviceStore.services, clips: clipboardStore.items, groups: clipboardStore.groups,
+      services: serviceStore.services, ocrServices: ocrServiceStore.services,
+      clips: clipboardStore.items, groups: clipboardStore.groups,
       words: historyStore.search("", favoritesOnly: true, limit: 0),
       notes: isNotesDamaged ? nil : noteStore?.exportable)
   }
