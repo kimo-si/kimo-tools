@@ -58,14 +58,14 @@ final class StatusItem: NSObject, NSMenuDelegate {
   static let templateIcon: NSImage? = {
     let image = NSImage(named: "StatusIcon")
     image?.isTemplate = true
-    image?.accessibilityDescription = "Kitty Tools"
+    image?.accessibilityDescription = AppBrand.name
     return image
   }()
 
   /// 只画一次（设置页每次重画都要读它）
   static let colorIcon: NSImage = {
     let image = menuBarImage(from: NSApp.applicationIconImage)
-    image.accessibilityDescription = "Kitty Tools"
+    image.accessibilityDescription = AppBrand.name
     return image
   }()
 
@@ -381,9 +381,9 @@ enum MenuExtra: String, CaseIterable {
     case .lidDepthPreview: "预览合盖动效"
     case .settings: "设置…"
     case .shortcuts: "快捷键速查表"
-    case .about: "关于 Kitty Tools"
+    case .about: "关于 \(AppBrand.name)"
     case .updates: "检查更新…"
-    case .quit: "退出 Kitty Tools"
+    case .quit: "退出 \(AppBrand.name)"
     }
   }
 
@@ -399,7 +399,7 @@ enum MenuExtra: String, CaseIterable {
     case .shortcuts: "Keyboard Shortcuts"
     case .about: "About"
     case .updates: "Check for Updates"
-    case .quit: "Quit Kitty Tools"
+    case .quit: "Quit \(AppBrand.name) Quit Kitty Tools"
     }
   }
 

@@ -720,7 +720,7 @@ struct ShortcutsSheet: View {
           Entry("←→", "↑↓", text: "在格子之间换（Tab、⇧Tab 也行）"),
           Entry("↩", "空格", text: "执行选中的那一格"),
           Entry("⌘,", text: "打开设置"),
-          Entry("⌘Q", text: "退出 Kitty Tools"),
+          Entry("⌘Q", text: "退出 \(AppBrand.name)"),
           Entry("Esc", "⌘W", text: "收起"),
         ]),
       // mac-whisker §6 设置；代码在 SettingsWindow 的 SettingsCommands（主菜单「显示 › 返回」）

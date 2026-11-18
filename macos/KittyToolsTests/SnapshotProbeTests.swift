@@ -543,7 +543,10 @@ struct SnapshotProbeTests {
       case .defaultApps: AnyView(DefaultAppsTab(appliesTextPresetOnOpen: false))
       case .appInput: AnyView(AppInputTab(previewSources: []))
       case .lidDepth:
-        AnyView(LidDepthTab(readStatus: { .init(sensorAvailable: true, angle: 105) }, refreshAccess: { true }, preview: {}))
+        AnyView(
+          LidDepthTab(
+            readStatus: { .init(sensorAvailable: true, angle: 105) }, refreshAccess: { true },
+            preview: {}))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .ocr:
@@ -839,18 +842,7 @@ struct SnapshotProbeTests {
       GeneralTab().environment(\._colorSchemeContrast, .increased),
       size: NSSize(width: 640, height: 560), dark: true,
       to: "\(out)/settings-general-contrast-dark.png")
-    // 欢迎引导（N14）：第一屏（全部功能）、第二屏「授权」、第三屏「按一下试试」（两行已按过），各出深色
-    for (name, screen) in [
-      ("welcome", OnboardingView.Screen.welcome), ("permissions", .permissions), ("try", .tryIt),
-    ] {
-      for dark in [false, true] {
-        try snapshot(
-          OnboardingView(
-            center: hotKeys, firstRun: true, screen: screen, tried: [.clipboard, .screenshot]),
-          size: OnboardingView.size, dark: dark,
-          to: "\(out)/onboarding-\(name)\(dark ? "-dark" : "").png")
-      }
-    }
+    try renderOnboarding(out, hotKeys: hotKeys)
     try renderSelection(out)
     // 常驻缩略图：存过（文件夹角标）、悬停（拷贝 / 存储 + 四角圆钮）
     let shot = try ScreenshotTests.render(["The quick brown fox", "敏捷的棕色狐狸"])
@@ -4658,6 +4650,48 @@ struct SnapshotProbeTests {
       size: NSSize(width: 780, height: 1120), dark: false, to: "\(out)/launchpad-settings.png")
   }
 
+  /// 屏外验证首次引导的三个步骤和第一屏底部，偏好只写入临时域。
+  @Test(.enabled(if: directory != nil)) func onboarding() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    try renderOnboarding(out, hotKeys: HotKeyCenter())
+  }
+
+  /// 使用新装选项渲染欢迎引导，浅深色各一份。
+  private func renderOnboarding(_ out: String, hotKeys: HotKeyCenter) throws {
+    let domain = "kitty-snapshot-onboarding-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: domain))
+    defer { prefs.removePersistentDomain(forName: domain) }
+    Feature.seedNewInstall(prefs, domainName: domain)
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      for (name, screen) in [
+        ("welcome", OnboardingView.Screen.welcome), ("permissions", .permissions), ("try", .tryIt),
+      ] {
+        try snapshot(
+          OnboardingView(
+            center: hotKeys, firstRun: true, screen: screen, tried: [.clipboard, .screenshot]
+          ).defaultAppStorage(prefs),
+          size: OnboardingView.size, dark: dark, to: "\(out)/onboarding-\(name)\(suffix).png")
+      }
+      try snapshot(
+        OnboardingView(center: hotKeys, firstRun: true).defaultAppStorage(prefs),
+        size: OnboardingView.size, dark: dark, to: "\(out)/onboarding-bottom\(suffix).png",
+        prepare: Self.scrollOnboardingToEnd)
+    }
+  }
+
+  /// 把屏外欢迎引导的滚动区域移到末尾，检查最后的插件和设置入口。
+  private static func scrollOnboardingToEnd(_ view: NSView) {
+    if let scroll = view as? NSScrollView, let document = scroll.documentView {
+      let bottom = document.isFlipped ? document.frame.height - scroll.contentView.bounds.height : 0
+      scroll.contentView.scroll(to: CGPoint(x: 0, y: max(0, bottom)))
+      scroll.reflectScrolledClipView(scroll.contentView)
+      return
+    }
+    view.subviews.forEach(scrollOnboardingToEnd)
+  }
+
   /// 功能开关（Shell/Feature.swift，2026-10-21）：设置 › 通用最上面的「功能」一组（全开、关了剪贴板和翻译；浅 / 深），
   /// 关着的剪贴板页（第一组「启用剪贴板」，下面变灰，保留天数、清空那几项不灰）、关着的启动台页。十几秒，图以 features- 开头。
   /// 开关读的是临时偏好域（defaultAppStorage），不写用户的偏好
@@ -4816,25 +4850,30 @@ struct SnapshotProbeTests {
     }
   }
 
-  /// 设置 › 默认应用的侧栏和列表，临时偏好域里放几个后缀，只读取系统的当前关联。
+  /// 用系统内置应用构造默认关联示例，屏外渲染设置页。
   @Test(.enabled(if: directory != nil)) func defaultAppsSettings() throws {
     let out = try #require(Self.directory)
     try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
     let name = "kitty-snapshot-default-apps-\(UUID().uuidString)"
     let prefs = try #require(UserDefaults(suiteName: name))
     defer { prefs.removePersistentDomain(forName: name) }
-    prefs.set("pdf\n" + DefaultFileType.presetExtensions, forKey: Prefs.defaultAppExtensions)
-    let navigation = SettingsNavigation(defaults: nil)
-    navigation.page = .defaultApps
+    let examples = [
+      ("pdf", "/System/Applications/Preview.app"), ("txt", "/System/Applications/TextEdit.app"),
+      ("png", "/System/Applications/Preview.app"), ("html", "/Applications/Safari.app"),
+    ]
+    let rows = try examples.map { suffix, path in
+      let fileType = try #require(DefaultFileType(suffix))
+      let app = DefaultFileType.Application(url: URL(filePath: path))
+      return DefaultFileType.Row(fileType, current: app, candidates: [app])
+    }
+    let page = VStack(spacing: 0) {
+      PageHeader(page: .defaultApps)
+      DefaultAppsTab(previewRows: rows)
+    }
     for dark in [false, true] {
-      let root = SettingsRoot(navigation: navigation) { _ in
-        AnyView(DefaultAppsTab(appliesTextPresetOnOpen: false))
-      } onboarding: {
-        AnyView(EmptyView())
-      }
       try snapshot(
-        root.defaultAppStorage(prefs).environment(\.colorScheme, dark ? .dark : .light),
-        size: NSSize(width: 780, height: 600), dark: dark,
+        page.defaultAppStorage(prefs).environment(\.colorScheme, dark ? .dark : .light),
+        size: NSSize(width: 590, height: 600), dark: dark,
         to: "\(out)/settings-default-apps\(dark ? "-dark" : "").png")
     }
   }

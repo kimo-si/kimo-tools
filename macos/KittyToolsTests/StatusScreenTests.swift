@@ -1084,7 +1084,7 @@ struct StatusScreenTests {
     let statuses = items.filter(\.isStatusPreset)
     #expect(statuses.map(\.title) == ["清洁屏幕", "请勿触碰", "马上回来"])
     // 副标题同别的内置动作（右侧类型才写「状态屏」，不重复）
-    #expect(statuses.allSatisfy { $0.subtitle == "Kitty Tools" && $0.kind == .action })
+    #expect(statuses.allSatisfy { $0.subtitle == "kimo-tools" && $0.kind == .action })
     // 图标是状态自己的表情（行里画它的静止画面）；没选的是空，行里用「只有字」的符号垫着。别的结果没有这一项
     #expect(statuses.map(\.presetEmoji) == ["glowing-star", "raised-hand", ""])
     #expect(statuses.allSatisfy { $0.symbol == "text.alignleft" })

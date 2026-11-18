@@ -314,7 +314,7 @@ nonisolated enum Recovery {
     for problem: Problem, directory: URL, now: Date = .now, calendar: Calendar = .current
   ) -> (title: String, text: String, buttons: [String], choices: [Choice]) {
     let place = (directory.path as NSString).abbreviatingWithTildeInPath
-    let head = "Kitty Tools 的数据库读不出来了。"
+    let head = "\(AppBrand.name) 的数据库读不出来了。"
     let fresh = "重新开始：全部从空的开始；现在的数据库文件、图片和备份一起挪开留着。"
     let kept = "挪开的文件不会删，在数据目录（\(place)）里一个「damaged-日期-时间」的文件夹里。设置和钥匙串里的密钥不受影响。"
     let reason = "原因：\(problem.reason)"

@@ -244,9 +244,9 @@ struct SettingsArchive: Codable, Equatable {
     var message: String {
       switch self {
       case .backupFailed(let reason): "没能先备份现在的设置和数据（\(reason)），所以没有导入"
-      case .notArchive: "这不是 Kitty Tools 导出的设置文件"
-      case .newer: "这个文件来自更新版本的 Kitty Tools，先更新再导入"
-      case .unreadable: "文件读不出来：可能被改动过，或者来自更新版本的 Kitty Tools"
+      case .notArchive: "这不是 \(AppBrand.name) 导出的设置文件"
+      case .newer: "这个文件来自更新版本的 \(AppBrand.name)，先更新再导入"
+      case .unreadable: "文件读不出来：可能被改动过，或者来自更新版本的 \(AppBrand.name)"
       case .wrongPassword: "密码不对（也可能是文件里的服务配置被改动过）"
       }
     }

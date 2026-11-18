@@ -169,7 +169,7 @@ struct TransferSection: View {
   private func chooseFile() {
     let panel = NSOpenPanel()
     panel.allowedContentTypes = [.json]
-    panel.message = "选一个 Kitty Tools 导出的设置文件"
+    panel.message = "选一个 \(AppBrand.name) 导出的设置文件"
     panel.prompt = "选取"
     isChoosing = true
     panel.begin { response in
@@ -399,8 +399,8 @@ struct ImportSheet: View {
   /// （只有设置和快捷键：两张列表和数据是合并进来的，照备份再导一遍也不会把加进来的删掉）
   private var headline: String {
     let source =
-      origin.map { "\($0)（Kitty Tools \(archive.version)）。" }
-      ?? ("Kitty Tools \(archive.version) 在 "
+      origin.map { "\($0)（\(AppBrand.name) \(archive.version)）。" }
+      ?? ("\(AppBrand.name) \(archive.version) 在 "
         + archive.exportedAt.formatted(date: .long, time: .shortened) + " 导出的文件。")
     return source
       + (transfer.backupFolder != nil && backsUp

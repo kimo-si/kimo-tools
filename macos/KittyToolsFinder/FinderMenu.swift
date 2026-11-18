@@ -298,7 +298,10 @@ final class FinderMenu: FIFinderSync {
   private static func grouped(_ menu: NSMenu) -> NSMenu {
     guard shows("finderMenuGrouped", default: false), !menu.items.isEmpty else { return menu }
     let outer = NSMenu()
-    let group = outer.addItem(withTitle: "Kitty Tools", action: nil, keyEquivalent: "")
+    let brand =
+      Bundle.main.object(forInfoDictionaryKey: "KittyBrandName") as? String
+      ?? "kimo-tools"
+    let group = outer.addItem(withTitle: brand, action: nil, keyEquivalent: "")
     group.image = tile("pawprint.fill", color: Tint.brand)
     group.submenu = menu
     return outer

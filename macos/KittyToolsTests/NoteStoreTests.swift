@@ -635,7 +635,7 @@ struct NoteStoreTests {
     #expect(try schema() == before)
     #expect(try db.query("SELECT body FROM notes") { $0.text(0) } == ["留着"])
     let message = "\(NoteStore.Failure.newer(2))"
-    #expect(message.contains("便签的数据是更新版本的 Kitty Tools 写的"))
+    #expect(message.contains("便签的数据是更新版本的 kimo-tools 写的"))
   }
 
   /// 库里的值离谱（文件被别的东西改过）：修订号夹到上限、再改也不溢出；不是有限数的顺序当 0；颜色夹进范围

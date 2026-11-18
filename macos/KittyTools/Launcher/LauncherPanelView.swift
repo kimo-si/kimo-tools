@@ -63,7 +63,7 @@ struct LauncherPanelView: View {
         ScriptPageView(
           title: review.script.title,
           subtitle: (review.script.path as NSString).abbreviatingWithTildeInPath,
-          note: "这个脚本是从网上下载的，第一次运行前先看一眼。它会以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制、完全磁盘访问授权。",
+          note: "这个脚本是从网上下载的，第一次运行前先看一眼。它会以你的身份运行，能用 \(AppBrand.name) 已有的辅助功能、屏幕录制、完全磁盘访问授权。",
           noteColor: Color(nsColor: .systemOrange), text: review.text, placeholder: "正在读取…",
           warning: review.reading?.problem.map { $0 + "不能在这里运行，用编辑器打开看完再说。" },
           label: "脚本全文", scroll: model.pageScroll

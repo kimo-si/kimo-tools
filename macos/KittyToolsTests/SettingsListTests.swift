@@ -337,6 +337,7 @@ struct SettingsListTests {
     #expect(OnboardingView.permissions(for: []).isEmpty)
     #expect(OnboardingView.permissions(for: [.statusScreen, .notes]) == [.accessibility])
     #expect(OnboardingView.permissions(for: [.clipboard]) == [.accessibility])
+    #expect(OnboardingView.permissions(for: [.ocr]) == [.screenRecording])
     #expect(OnboardingView.permissions(for: [.lidDepth]) == [.screenRecording])
     #expect(
       OnboardingView.permissions(for: [.dockPreview]) == [.accessibility, .screenRecording])

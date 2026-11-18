@@ -60,7 +60,7 @@ struct FinderMenuTab: View {
         .gated(by: .finderMenu)
         Toggle(isOn: $grouped) {
           Text("收进一个子菜单")
-          Text("右键第一层只多一项「Kitty Tools」，下面开着的这几项都在它里面")
+          Text("右键第一层只多一项「\(AppBrand.name)」，下面开着的这几项都在它里面")
         }
         .gated(by: .finderMenu)
       } header: {

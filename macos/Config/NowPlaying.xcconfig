@@ -4,7 +4,7 @@ PRODUCT_NAME = KittyToolsNowPlaying
 PRODUCT_MODULE_NAME = KittyToolsNowPlaying
 // mediaremoted（macOS 15.4 起）只把别的 App 的播放信息给 bundle id 以 com.apple. 开头的进程；XPC 服务认的是 Info.plist 的
 // bundle id（2026-11-13 macOS 27.0.1 实测，签名标识无所谓）。定了不改（mac-native §6）；Debug、Release 同一个：
-// XPC 服务是每个 App 自己的，Kitty Tools 和 Kitty Tools Dev 同时开着也不会撞
+// XPC 服务是每个 App 自己的，正式版和开发版同时开着也不会撞
 PRODUCT_BUNDLE_IDENTIFIER = com.apple.kittytools.nowplaying
 INFOPLIST_FILE = Config/NowPlaying-Info.plist
 INFOPLIST_KEY_LSUIElement =

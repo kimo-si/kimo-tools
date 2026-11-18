@@ -143,7 +143,7 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
       switch (extra, extra.isOn(state)) {
       case (.pauseClipboard, let on?): on ? "已暂停" : "正在记录"
       case (_, let on?): on ? "已开启" : "已关闭"
-      default: "Kitty Tools"
+      default: AppBrand.name
       }
     return action(
       extra.rawValue, extra.title(pinsHidden: state.pinsHidden == true).replacing("…", with: ""),
@@ -215,7 +215,7 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
   ]
 
   private static func action(
-    _ id: String, _ title: String, _ alias: String, subtitle: String = "Kitty Tools"
+    _ id: String, _ title: String, _ alias: String, subtitle: String = AppBrand.name
   ) -> LauncherItem {
     let pinyin = AppCatalog.pinyin(title)
     return LauncherItem(

@@ -331,7 +331,7 @@ import Observation
       return "这个文件夹里的同步记录还没下载完（或者读不出来），稍后再试"
     }
     if let marker = inspection.marker, marker.format > NoteSyncFolder.format {
-      return "这个文件夹是更新版本的 Kitty Tools 用的，先更新再同步"
+      return "这个文件夹是更新版本的 \(AppBrand.name) 用的，先更新再同步"
     }
     if inspection.marker == nil, inspection.devices > 0 {
       return "这个文件夹里有别的电脑同步过的数据，却找不到同步记录（可能还没下载完），稍后再试"

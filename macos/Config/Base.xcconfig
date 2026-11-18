@@ -7,9 +7,11 @@ MARKETING_VERSION = 0.9.0
 CURRENT_PROJECT_VERSION = 1
 APP_BUNDLE_ID = com.yy.kitty-tools.native
 PRODUCT_BUNDLE_IDENTIFIER = $(APP_BUNDLE_ID)$(BUNDLE_ID_SUFFIX)
-// .app 名、可执行文件名和显示名（N16）；Debug 改成 Kitty Tools Dev，Tests.xcconfig 的 TEST_HOST 也读它
-APP_PRODUCT_NAME = Kitty Tools
+// .app 名、可执行文件名和显示名；Debug 追加 Dev，测试宿主路径也取这个名字。
+APP_BRAND_NAME = kimo-tools
+APP_PRODUCT_NAME = $(APP_BRAND_NAME)
 PRODUCT_NAME = $(APP_PRODUCT_NAME)
+APP_UPDATE_REPOSITORY = kimo-si/kitty-tools
 PRODUCT_MODULE_NAME = KittyTools
 SDKROOT = macosx
 MACOSX_DEPLOYMENT_TARGET = 15.0
@@ -28,6 +30,7 @@ ENABLE_HARDENED_RUNTIME = YES
 CODE_SIGN_ENTITLEMENTS = Config/KittyTools.entitlements
 GENERATE_INFOPLIST_FILE = YES
 INFOPLIST_FILE = Config/Info.plist
+INFOPLIST_KEY_CFBundleDisplayName = $(APP_PRODUCT_NAME)
 INFOPLIST_KEY_LSUIElement = YES
 INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.productivity
 

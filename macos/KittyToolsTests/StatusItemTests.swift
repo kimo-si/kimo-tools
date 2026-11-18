@@ -22,9 +22,9 @@ struct StatusItemTests {
   /// 单色是模板图（跟着菜单栏反色）；彩色不是模板、16 pt 正方形、@1x / @2x 两张位图；读屏名都是 Kitty Tools
   @Test func styleImages() throws {
     let template = try #require(StatusItem.IconStyle.template.image)
-    #expect(template.isTemplate && template.accessibilityDescription == "Kitty Tools")
+    #expect(template.isTemplate && template.accessibilityDescription == "kimo-tools")
     let color = try #require(StatusItem.IconStyle.color.image)
-    #expect(!color.isTemplate && color.accessibilityDescription == "Kitty Tools")
+    #expect(!color.isTemplate && color.accessibilityDescription == "kimo-tools")
     #expect(color.size == NSSize(width: 16, height: 16))
     #expect(color.representations.map(\.pixelsWide) == [16, 32])
     // 只画一次
@@ -109,7 +109,7 @@ struct StatusItemTests {
 
   @Test func launcherCanQuit() throws {
     let quit = try #require(LauncherItem.actions().last)
-    #expect(quit.target == "quit" && quit.title == "退出 Kitty Tools" && quit.symbol == "power")
+    #expect(quit.target == "quit" && quit.title == "退出 kimo-tools" && quit.symbol == "power")
     #expect(MenuExtra.quit.color == Style.Family.general && MenuExtra.quit.section == nil)
     #expect(
       LauncherMatch.score("quit", item: quit) > 0 && LauncherMatch.score("tuichu", item: quit) > 0)
@@ -118,8 +118,8 @@ struct StatusItemTests {
         "updates", "quit",
       ])
     // 图标隐藏后搜「Kitty Tools」是想回设置：App 那一行要比「退出 Kitty Tools」「关于 Kitty Tools」排得靠前
-    let app = AppCatalog.item(path: "/Applications/Kitty Tools.app")
-    for query in ["kitty", "kitty tools", "Kitty Tools"] {
+    let app = AppCatalog.item(path: "/Applications/kimo-tools.app")
+    for query in ["kimo", "kimo-tools", "KIMO-TOOLS"] {
       #expect(
         LauncherMatch.score(query, item: app) > LauncherMatch.score(query, item: quit), "\(query)")
     }

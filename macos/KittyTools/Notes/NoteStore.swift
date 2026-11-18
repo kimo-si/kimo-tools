@@ -38,7 +38,7 @@ import Observation
     var description: String {
       switch self {
       case .newer(let version):
-        "便签的数据是更新版本的 Kitty Tools 写的（数据版本 \(version)，这个版本只认到 \(NoteStore.schemaVersion)）"
+        "便签的数据是更新版本的 \(AppBrand.name) 写的（数据版本 \(version)，这个版本只认到 \(NoteStore.schemaVersion)）"
       }
     }
   }

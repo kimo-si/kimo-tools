@@ -1,22 +1,21 @@
 #!/usr/bin/env bash
 # 原生版打包（路径 B：Apple Development 签名、不公证，D7）：archive → 自检 → arm64 DMG + 更新用 zip + 更新清单 → notes
-# 发布（2026-09-27 起，和 Tauri 版的仓库无关）：发到本仓库 github.com/YyAdnBug/kitty-tools，tag macos-v<版本>、
+# 发布：发到 Config/Base.xcconfig 配置的发行仓库，tag macos-v<版本>、
 #   正式 release、**标 latest**，附三个文件：DMG（首次安装）、<名字>_<版本>_arm64.zip（App 内更新下载它，文件名后缀 _arm64.zip 别改）、
 #   更新清单 macos-update.json（2026-11-09，issue #12）。App 内更新先读 releases/latest/download/macos-update.json（静态文件，
 #   不走 API、不受没登录时每个 IP 每小时 60 次的限制），读不到才读 API 的 release 列表、取版本号最大的 macos-v*（第四轮体检 E13）——
 #   所以 latest 必须一直是 mac 版（Windows 版、表情包这些 release 一律 --latest=false），清单必须传上去。清单里是版本号、zip 的下载地址
 #   （按 GitHub 上传后的名字：空格换成「.」）、sha256、大小、发布页；**格式发布后别改**（已装的版本会读它，见
 #   Updater.release(fromManifest:)：只加新键，要改已有键的意思就换文件名、旧名字的照发）。传完核一遍（两条都要 200）：
-#     curl -fsSL https://github.com/YyAdnBug/kitty-tools/releases/latest/download/macos-update.json
-#     curl -fsIL "$(curl -fsSL https://github.com/YyAdnBug/kitty-tools/releases/latest/download/macos-update.json | jq -r .url)"
+#     curl -fsSL https://github.com/kimo-si/kitty-tools/releases/latest/download/macos-update.json
+#     curl -fsIL "$(curl -fsSL https://github.com/kimo-si/kitty-tools/releases/latest/download/macos-update.json | jq -r .url)"
 #   发布说明固定附「系统设置 › 隐私与安全 › 仍要打开」步骤（只有第一次安装要；之后 App 内更新下载的包不带隔离标记，不用再放行）。
-# 产物名跟 PRODUCT_NAME 走（N16：Kitty Tools.app、卷名 Kitty Tools、Kitty Tools_<版本>_arm64.dmg，之前叫 Kitty Tools Native）。
-#   和 Tauri 旧版同名，发布说明还要附：安装前先删掉（或让访达替换）/Applications 里旧版的 Kitty Tools.app；
-#   从 Kitty Tools Native 升上来的，把旧的 Kitty Tools Native.app 也删掉（同一个 bundle id，留着会让开机自启指错），
-#   开机自启可能要在 设置 › 通用 重新打开一次。
+# 产物名跟 PRODUCT_NAME 走（kimo-tools.app、卷名 kimo-tools、kimo-tools_<版本>_arm64.dmg）。
+#   从 Kitty Tools 升上来时先退出旧版并移走旧应用包。同一 Bundle ID 可继续使用原来的本机数据，
+#   登录项若还指向旧包，在 设置 › 通用 重新开启。
 # DMG 窗口（Whisker 品牌时刻）：背景 Config/dmg-background.tiff（设计区 600×400 在左上角：左 App、右「应用程序」、中间品牌粉箭头，
 #   底下写着「仍要打开」的路径；整张 2560×1600 pt、@1x + @2x——访达从窗口左上角 1:1 贴背景、不缩放，窗口拉大时靠多出来的
-#   奶油底盖住，不露白；由 swift macos/brand-icons.swift 生成，字标写死 Kitty Tools，改名要改那个脚本重跑），
+#   奶油底盖住，不露白；由 swift macos/brand-icons.swift 生成），
 #   用 hdiutil 做可写映像 + AppleScript 让访达摆位置（隐藏的 .background 挪到默认窗口外、删掉 .fseventsd，
 #   免得开了「显示隐藏文件」时压在字标上），再压成只读。第一次跑会问能不能控制访达；
 #   不允许或 DMG_LAYOUT=0 时照样出包，只是没有背景和摆位。
@@ -166,7 +165,8 @@ rm -rf "$CHECK"
 # 更新清单（#12，说明见文件头）：文件名和 Updater.manifestName 一样（单测比对）；只给 arm64 的包写
 MANIFEST=""
 if [[ "$ARCH" == arm64 ]]; then
-  ZIPNAME=$(basename "$ZIP") && TAG="macos-v$VERSION" && REL="https://github.com/YyAdnBug/kitty-tools/releases"
+  REPO=$(/usr/libexec/PlistBuddy -c 'Print :KittyUpdateRepository' "$APP/Contents/Info.plist")
+  ZIPNAME=$(basename "$ZIP") && TAG="macos-v$VERSION" && REL="https://github.com/$REPO/releases"
   MANIFEST="$OUT/macos-update.json"
   jq -n --arg version "$VERSION" --arg url "$REL/download/$TAG/${ZIPNAME// /.}" \
     --arg sha256 "$(shasum -a 256 "$ZIP" | cut -d' ' -f1)" --argjson size "$(stat -f%z "$ZIP")" \

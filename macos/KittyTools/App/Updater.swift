@@ -1,4 +1,4 @@
-// 应用内更新（PLAN D8，2026-09-27 改为做）：先读本仓库（github.com/YyAdnBug/kitty-tools，不碰 Tauri 版的仓库）latest 那个
+// 应用内更新（PLAN D8，2026-09-27 改为做）：先读构建时配置的发行仓库 latest 那个
 // release 上的更新清单 macos-update.json（build-dmg.sh 生成，一个静态文件：不走 API，不受没登录时每个 IP 每小时 60 次的限制——
 // 公司、学校共用出口时一下就用完、报 403，issue #12）；读不到（老 release 没有它、Windows 版被误标成 latest、网络问题）再读
 // API 的 release 列表，取版本号最大的 macos-v*（跳过草稿和预发布；第四轮体检 E13：同一个仓库里还发 Windows 版，windows-v* 标成
@@ -69,15 +69,16 @@ import AppKit
   @ObservationIgnored private var menuWaiting = false
 
   static let bundleID = "com.yy.kitty-tools.native"
-  static let releasesPage = URL(string: "https://github.com/YyAdnBug/kitty-tools/releases")!
+  static let releasesPage = URL(string: "https://github.com/\(AppBrand.repository)/releases")!
   /// 更新清单的文件名（build-dmg.sh 写同一个名字，UpdaterTests 比对）
   static let manifestName = "macos-update.json"
   /// latest 那个 release 上的清单：github.com 的下载地址，302 到附件，不算 API 的次数
-  private static let manifest = URL(
-    string: "https://github.com/YyAdnBug/kitty-tools/releases/latest/download/\(manifestName)")!
+  private static let manifest =
+    releasesPage
+    .appending(path: "latest/download/\(manifestName)")
   /// 最近 20 个 release（mac 和 Windows 混在一起，按发布时间倒序）：从里面挑 macos-v*
   private static let releases = URL(
-    string: "https://api.github.com/repos/YyAdnBug/kitty-tools/releases?per_page=20")!
+    string: "https://api.github.com/repos/\(AppBrand.repository)/releases?per_page=20")!
   /// 更新包的后缀跟着这份 App 的架构走（PR #21：Intel 能自己编）。Intel 上找 _x86_64.zip，release 里没有就当没有更新——
   /// 把 _arm64.zip 换上去，Intel 上就打不开了；清单（只写 arm64 那个包）的网址后缀对不上也不认，退回 API 按后缀挑
   #if arch(x86_64)
@@ -433,7 +434,7 @@ import AppKit
     let readOnly = (try? folderURL.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?
       .volumeIsReadOnly
     if folder.contains("/AppTranslocation/") || readOnly == true {
-      throw UpdateError("请先把 Kitty Tools 拖进「应用程序」，从那里打开后再更新")
+      throw UpdateError("请先把 \(AppBrand.name) 拖进「应用程序」，从那里打开后再更新")
     }
     guard FileManager.default.isWritableFile(atPath: folder) else {
       throw UpdateError("没有权限替换「\(folder)」里的 App：请用管理员账户更新，或到发布页下载后手动替换")

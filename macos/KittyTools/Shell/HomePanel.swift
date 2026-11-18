@@ -381,7 +381,7 @@ struct HomeView: View {
       .contentShape(.rect)
     }
     .accessibilityLabel(
-      extra == .quit ? "退出 Kitty Tools" : isNew(extra) ? "设置，" + WhatsNew.spoken : "设置")
+      extra == .quit ? "退出 \(AppBrand.name)" : isNew(extra) ? "设置，" + WhatsNew.spoken : "设置")
   }
 
   private func isNew(_ extra: MenuExtra) -> Bool {

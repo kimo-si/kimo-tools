@@ -350,7 +350,7 @@ struct SyncSection: View {
         syncer.server == nil
           ? "同步文件夹里的同步记录被换掉或删了：先停止同步，再选一个新的空文件夹（每台电脑都换过去）"
           : "服务器上那个文件夹里的同步记录被换掉或删了：先停止同步，再连一个新的空文件夹（每台电脑都换过去）"
-      case .newerFormat: "文件夹里有更新版本的 Kitty Tools 写的东西，先更新这台 Mac 上的 Kitty Tools"
+      case .newerFormat: "文件夹里有更新版本的 \(AppBrand.name) 写的东西，先更新这台 Mac 上的 \(AppBrand.name)"
       case .unreadable(let name):
         "\(name.map { "「\($0)」" } ?? "另一台电脑")那份同步记录还读不出来（多半是还没下载完），读到了自己接着同步"
       case .downloading:

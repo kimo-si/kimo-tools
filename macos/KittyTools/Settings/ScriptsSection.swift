@@ -135,7 +135,7 @@ struct ScriptsSection: View {
       NewTitle("脚本命令", page: .launcher, fresh: navigation?.fresh ?? [])
     } footer: {
       SectionFootnote(
-        "脚本以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制等授权，只放你信得过的脚本；从网上下载的，第一次运行前会先给你看一眼全文。")
+        "脚本以你的身份运行，能用 \(AppBrand.name) 已有的辅助功能、屏幕录制等授权，只放你信得过的脚本；从网上下载的，第一次运行前会先给你看一眼全文。")
     }
     .sheet(item: $pending) { candidate in
       ScriptImportSheet(candidate: candidate) {
@@ -350,7 +350,7 @@ private struct ScriptImportSheet: View {
           .foregroundStyle(Color(nsColor: .systemOrange))
           .fixedSize(horizontal: false, vertical: true)
       }
-      Text("它会以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制、完全磁盘访问授权。只导入你信得过的脚本。")
+      Text("它会以你的身份运行，能用 \(AppBrand.name) 已有的辅助功能、屏幕录制、完全磁盘访问授权。只导入你信得过的脚本。")
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
       if let problem = reading.problem {

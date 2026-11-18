@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-**kitty-tools 原生 macOS 版**：Swift 6 + SwiftUI / AppKit 写的纯原生菜单栏工具，替代 Tauri 版的 macOS 端；基本自用，发布包以 Apple 芯片（arm64）为主，Intel 能自己编、能出 `_x86_64` 包（2026-11-16 收 PR #21，mac-native §2），最低 macOS 15.0。
+**kimo-tools 原生 macOS 版**：基于上游 Kitty Tools 二次开发，使用 Swift 6 + SwiftUI / AppKit 写的纯原生菜单栏工具，替代 Tauri 版的 macOS 端；基本自用，发布包以 Apple 芯片（arm64）为主，Intel 能自己编、能出 `_x86_64` 包（2026-11-16 收 PR #21，mac-native §2），最低 macOS 15.0。
 
 - **入口**：左键点菜单栏图标是主界面（`Shell/HomePanel.swift`，全部功能一格一格摆着），右键 / ⌃点是菜单（0.7.0，PLAN §10「主界面」）。
 - **功能**（括号里是加进来的版本；每个都能在 设置 › 通用 › 功能 里整个关掉或移除，`Shell/Feature.swift`；新装只开剪贴板、启动器、翻译、OCR、截图，侧栏分组、关着的标「已关闭」，PLAN §10「功能管理」；2026-11-17 起只有剪贴板、启动器、翻译、OCR、截图、录制是功能，便签、提醒、状态屏、启动台、程序坞预览、访达右键、保持唤醒、刘海岛（点刘海那一张、两边的活动、系统提示；岛上的提示不算）是插件，PLAN §10「插件与保持唤醒」）：
@@ -25,7 +25,7 @@
   - 访达右键 `FinderMenu/` + 扩展 target `macos/KittyToolsFinder/`：访达右键第一层的「拷贝路径」「在“X”中打开」「新建文件 ▸」，加上右键扩充的拷贝名称、移动到 / 复制到、剪切 / 粘贴、压缩 / 解压到这里、修复乱码文件名（这几项默认开）和替身到桌面、显示隐藏文件、隐藏 / 扩展名、拷贝哈希、彻底删除（默认关）；整个功能默认关（下一版，2026-11-08 立项，`finder-wip` 分批做；扩展只画菜单、开沙盒、Swift 5 语言模式，规矩在 mac-native §2 §3 §6，PLAN §10「访达右键」）
 - **版本**：已发布到 0.9.0（latest，2026-11-14：插件、刘海岛扩展和完善、截图标注、WebDAV 同步等，PLAN §12；0.8.1 是 2026-11-10、0.8.0 是 2026-11-09）；`MARKETING_VERSION` 是 0.9.0。各版真机手测都没走完。
 - 现状、待手测、下一步看 PLAN §12（各族立项日期、批次进度的原文在 §12「各族进度摘要（原 AGENTS 项目概述）」）；发版前走的「真机回归清单」和正在验收的那一轮手测看 `macos/HANDTEST.md`（到 2026-10-30 的发版冒烟清单和各批手测原样归档在 `macos/docs/archive/HANDTEST-2026-10.md`，编号不变，代码注释、规则里「HANDTEST X 第 N 条」都指那里）；拍板和每族的规矩看 PLAN §10 和对应的 `mac-*` 规则。
-- Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），不再改（改了会丢偏好、钥匙串和授权）；产品名 / .app 名 `Kitty Tools`（Debug `Kitty Tools Dev`）。和 Tauri 旧版同名：安装前先删掉 /Applications 里旧版的 `Kitty Tools.app`。
+- Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），不再改（改了会丢偏好、钥匙串和授权）；产品名 / .app 名 `kimo-tools`（Debug `kimo-tools Dev`）。从原生 Kitty Tools 升级时先退出并移走旧应用包，沿用同一 Bundle ID 下的本机配置。
 - **规格**：各 `mac-*` 规则（界面与动效按 `mac-whisker`）+ 对标产品（启动器 Alfred / Raycast、翻译 Bob、截图 iShot / CleanShot、录屏 CleanShot / ⌘⇧5、录音 QuickTime / iShot、剪贴板 Paste）。`macos/PLAN.md` 只留仍有效的（§2 技术栈、§4 架构与文件表、§8 打包、§10 约束与决定、§11 实现原则与旧逻辑问题、§12 现状），历史在 `macos/docs/archive/`。
 - **Windows 原生版**在 `windows` 分支的 `windows/`（C# + WinUI 3；本分支里的 `windows/` 是 0.6.0 时的旧快照，别在这里改）：规矩和方案在那边的 `windows/AGENTS.md`、`windows/PLAN.md`。本文件其余部分和 `.claude/` 里的规则只管 `macos/`；Windows 的提交写成 `<type>(win): …`，release 不标 latest。
 
@@ -255,7 +255,7 @@ defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 - 刻意的简化写 `ponytail:` 注释，写明上限和升级路径。
 - commit 格式 `<type>: <description>`，type 取 feat / fix / ui / refactor / docs / perf / build / chore。**标题一行、70 字以内，空一行再写正文**：为什么改、改了什么、怎么验的都写进正文（会话开头会自动带上最近几条提交的标题，写长了每个会话都白读一遍）。旧提交不改。
 - **更新日志（必遵）**：改 `MARKETING_VERSION` 必须在 `macos/KittyTools/Resources/changelog.json` 追加该版本条目，`type` 只允许 feat / fix / perf / ui（refactor / build / chore 不进用户日志）；缺条目时 `build-dmg.sh` 直接中止。
-- 发布：本仓库 github.com/YyAdnBug/kitty-tools（不碰 Tauri 版的仓库），tag `macos-v*`，正式 release、标 latest，附 DMG、`_arm64.zip` 和更新清单 `macos-update.json`（App 内更新先读 latest 上的清单、读不到再走 API，mac-native §7）；不公证，发布说明固定附「系统设置 › 隐私与安全 › 仍要打开」步骤（只有第一次安装要，之后 App 内更新）。
+- 发布：`APP_UPDATE_REPOSITORY` 配置的二开仓库（当前为 github.com/kimo-si/kitty-tools），tag `macos-v*`，正式 release、标 latest，附 DMG、`_arm64.zip` 和更新清单 `macos-update.json`（App 内更新先读 latest 上的清单、读不到再走 API，mac-native §7）；不公证，发布说明固定附「系统设置 › 隐私与安全 › 仍要打开」步骤（只有第一次安装要，之后 App 内更新）。
 
 ## 给 agent 的工具
 

@@ -1,7 +1,6 @@
 // 首次安装的欢迎引导（N14，Whisker 品牌时刻，对标 Apple 自家 App 的首次启动页 / Raycast）：盖在设置窗上的 sheet，奶油底，三屏。
-// 第一屏 = 品牌图标 + 大标题 + 全部功能两列（勾选框 + 家族色块 + 名字 + Feature.blurb，这台系统上有的都列，加了功能这里自己跟上；
-// 2026-10-26 用户报引导还停在四件套）。勾选框就是功能开关（同 设置 › 通用 › 功能，立即生效）：新装时只勾着常用的四样
-// （Feature.seedNewInstall），用得上的勾上（2026-11-04 功能管理拍板 M6，对标 PowerToys / Raycast 的首次引导）；
+// 第一屏分组列出全部功能和插件，条目取自 Feature，说明直接可见，系统版本不支持的条目置灰。
+// 勾选框和设置页绑定同一个偏好，默认勾选由 Feature.seedNewInstall 决定；
 // 第二屏「授权」= 勾上的功能用得着的辅助功能、屏幕录制（OnboardingView.permissions；PermissionRow，同 设置 › 通用 › 权限，
 // 每秒刷新），一项都用不着就跳过这一屏，别的授权用到时再问；
 // 第三屏「按一下试试」= 主要全局快捷键一行一个（Whisker 键帽），用户真的按下、热键触发时（热键照常执行，面板照样弹出）
@@ -31,7 +30,9 @@ struct OnboardingView: View {
     let accessibility: Set<Feature> = [
       .clipboard, .launcher, .translate, .screenshot, .record, .statusScreen, .dockPreview,
     ]
-    let screenRecording: Set<Feature> = [.translate, .screenshot, .record, .dockPreview, .lidDepth]
+    let screenRecording: Set<Feature> = [
+      .translate, .ocr, .screenshot, .record, .dockPreview, .lidDepth,
+    ]
     return [
       features.isDisjoint(with: accessibility) ? nil : .accessibility,
       features.isDisjoint(with: screenRecording) ? nil : .screenRecording,
@@ -239,54 +240,65 @@ private struct RowCard<Item: Hashable, Row: View>: View {
   }
 }
 
-/// 第一屏：品牌图标 + 大标题 + 这台系统上有的全部功能和插件，两列，每格一个勾选框（名字、色块取设置页的，一句话是 Feature.blurb）。
-/// 2026-11-13 便签、提醒也成了插件（拍板 P5）：只列功能的话新装的人看不到它们，所以插件也列，分在下面一组、默认不勾，勾了就是添加。
-/// 插件用紧凑网格（勾选框、色块、名字），超过九项时扩为四列，在固定高度里保持三行。
+/// 第一屏：标题固定，功能、插件和设置入口在下面滚动，继续按钮始终可见。
 private struct WelcomeScreen: View {
   var body: some View {
-    let plugins = Feature.allCases.filter { $0.isPlugin && $0.isAvailable }
-    let columns = plugins.count > 9 ? 4 : 3
-    let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     VStack(spacing: 0) {
       BrandIcon(size: 64)
+        .padding(.top, 8)
       Heading(
-        title: "欢迎使用 Kitty Tools",
-        subtitle: "这些小工具都住在菜单栏里，用快捷键随叫随到。\n勾上要用的，以后在 设置 › 通用 › 功能 里随时改。"
+        title: "欢迎使用 \(AppBrand.name)",
+        subtitle: "勾选想用的功能和插件，向下滚动查看全部。\n以后可以在「设置 › 通用 › 功能」调整。"
       )
-      .padding(.top, 8)
-      VStack(alignment: .leading, spacing: 10) {
-        Self.grid(Feature.listed)
-        Divider()
-        Text("插件 · 用得上再勾，以后也能在 设置 › 通用 › 功能 里添加")
-          .font(.subheadline).foregroundStyle(.secondary)
-        Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
-          ForEach(Array(stride(from: 0, to: plugins.count, by: columns)), id: \.self) { start in
-            GridRow {
-              ForEach(plugins[start..<min(start + columns, plugins.count)], id: \.self) {
-                FeatureChoice(feature: $0, compact: true)
-              }
-            }
-          }
+      .padding(.vertical, 8)
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          group("功能", features: Feature.allCases.filter { !$0.isPlugin })
+          group("插件", features: Feature.allCases.filter(\.isPlugin))
+          dataTools
         }
+        .padding(.horizontal, 36)
+        .padding(.vertical, 6)
       }
-      .padding(14)
-      .background(.background, in: shape)
-      .overlay(shape.hairlineBorder())
-      .padding(.horizontal, 36)
-      .padding(.top, 14)
     }
   }
 
-  private static func grid(_ features: [Feature]) -> some View {
-    Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 10) {
-      ForEach(Array(stride(from: 0, to: features.count, by: 2)), id: \.self) { start in
-        GridRow {
-          ForEach(features[start..<min(start + 2, features.count)], id: \.self) {
-            FeatureChoice(feature: $0)
-          }
+  /// 统一绘制功能和插件分组，每项保留名称、说明和勾选框。
+  private func group(_ title: String, features: [Feature]) -> some View {
+    let columns = Array(
+      repeating: GridItem(.flexible(), spacing: 16, alignment: .topLeading), count: 2)
+    return card(title) {
+      LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+        ForEach(features, id: \.self) { feature in
+          FeatureChoice(feature: feature)
         }
       }
     }
+  }
+
+  /// 展示设置提供的跨功能能力，不为它们新增开关。
+  private var dataTools: some View {
+    card("设置与数据") {
+      Text("自定义快捷键和外观，导入或导出设置与数据。可用共享文件夹或 WebDAV 在多台 Mac 之间同步。")
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
+  /// 各组沿用引导的白卡和发丝线，标题可供读屏跳转。
+  private func card<Content: View>(
+    _ title: String, @ViewBuilder content: () -> Content
+  ) -> some View {
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
+    return VStack(alignment: .leading, spacing: 10) {
+      Text(title).font(.headline).accessibilityAddTraits(.isHeader)
+      content()
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(14)
+    .background(.background, in: shape)
+    .overlay(shape.hairlineBorder())
   }
 }
 
@@ -294,54 +306,35 @@ private struct WelcomeScreen: View {
 /// 没勾的色块变淡（同设置侧栏「已关闭」那一行）
 private struct FeatureChoice: View {
   let feature: Feature
-  /// 插件那组：只有色块 + 名字，一句话放悬停提示和读屏
-  var compact = false
   @AppStorage private var isOn: Bool
 
-  init(feature: Feature, compact: Bool = false) {
+  /// 读取与功能管理页共用的偏好。
+  init(feature: Feature) {
     self.feature = feature
-    self.compact = compact
     _isOn = AppStorage(wrappedValue: feature.defaultOn, feature.prefsKey)
   }
 
   var body: some View {
-    if compact {
-      Toggle(isOn: $isOn) {
-        HStack(spacing: 6) {
-          KindTile(symbol: feature.page.symbol, color: feature.page.color, size: 20)
-            .opacity(isOn ? 1 : Style.disabledOpacity)
-            .accessibilityHidden(true)
-          Text(feature.title).font(.callout).lineLimit(1)
-          Spacer(minLength: 0)
-        }
-        .contentShape(Rectangle())
-      }
-      .toggleStyle(.checkbox)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .help(feature.blurb)
-      .accessibilityHint(feature.blurb)
-    } else {
-      full
-    }
-  }
-
-  private var full: some View {
-    Toggle(isOn: $isOn) {
+    Toggle(isOn: feature.isAvailable ? $isOn : .constant(false)) {
       HStack(alignment: .top, spacing: 10) {
         KindTile(symbol: feature.page.symbol, color: feature.page.color, size: 24)
-          .opacity(isOn ? 1 : Style.disabledOpacity)
+          .opacity(isOn && feature.isAvailable ? 1 : Style.disabledOpacity)
           .accessibilityHidden(true)
         VStack(alignment: .leading, spacing: 1) {
           Text(feature.title).fontWeight(.medium)
           Text(feature.blurb)
             .font(.subheadline).foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
+          if !feature.isAvailable {
+            Text("此 macOS 版本暂不支持").font(.subheadline).foregroundStyle(.secondary)
+          }
         }
         Spacer(minLength: 0)
       }
       .contentShape(Rectangle())  // 色块、空白处也算点在勾选框上
     }
     .toggleStyle(.checkbox)
+    .disabled(!feature.isAvailable)
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
@@ -391,7 +384,7 @@ private struct TryScreen: View {
 
   /// 有默认键的几个功能各挑最常用的一个（七行正好放得下）
   private static let shown: [HotKeyAction] = [
-    .clipboard, .launcher, .selectionTranslate, .screenshot, .screenshotTranslate, .screenRecord,
+    .clipboard, .launcher, .selectionTranslate, .screenshot, .screenshotOCR, .screenRecord,
     .noteCapture,
   ]
 

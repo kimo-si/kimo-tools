@@ -341,7 +341,7 @@ nonisolated enum NotesRecovery {
     let title = "便签打不开了"
     let head = "便签的数据读不出来了。剪贴板、翻译和别的功能不受影响。"
     let fresh = "重新开始：便签从空的开始；现在的便签数据、图片和备份一起挪开留着。"
-    let skip = "这次先不用便签：什么都不动，便签这次用不了，下次打开 Kitty Tools 时再试。"
+    let skip = "这次先不用便签：什么都不动，便签这次用不了，下次打开 \(AppBrand.name) 时再试。"
     let kept = "挪开的文件不会删，在数据目录（\(place)）里一个「damaged-日期-时间」的文件夹里。"
     let reason = "原因：\(problem.reason)"
     let tail =
@@ -381,7 +381,7 @@ nonisolated enum NotesRecovery {
       let place = (directory.path as NSString).abbreviatingWithTildeInPath
       return (
         "便签还是打不开",
-        "便签这次用不了，下次打开 Kitty Tools 时再试。剪贴板、翻译和别的功能不受影响。\n\n"
+        "便签这次用不了，下次打开 \(AppBrand.name) 时再试。剪贴板、翻译和别的功能不受影响。\n\n"
           + "已经挪开的文件没有删，在数据目录（\(place)）里的「damaged-日期-时间」文件夹里。\n\n原因：\(reason)"
       )
     }

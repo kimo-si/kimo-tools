@@ -194,7 +194,7 @@
 
 ### 8.1 配置文件
 
-下面是 M0 时的骨架，完整的值以 `macos/Config/*.xcconfig` 为准。
+下面是构建设置的骨架，完整的值以 `macos/Config/*.xcconfig` 为准。
 
 **`macos/Config/Base.xcconfig`**
 ```
@@ -203,9 +203,11 @@ MARKETING_VERSION = 0.0.1
 CURRENT_PROJECT_VERSION = 1
 APP_BUNDLE_ID = com.yy.kitty-tools.native
 PRODUCT_BUNDLE_IDENTIFIER = $(APP_BUNDLE_ID)$(BUNDLE_ID_SUFFIX)
-// .app 名、可执行文件名和显示名（N16，之前叫 Kitty Tools Native）；Tests.xcconfig 的 TEST_HOST 也读它
-APP_PRODUCT_NAME = Kitty Tools
+// .app 名、可执行文件名和显示名；Tests.xcconfig 的 TEST_HOST 也读它
+APP_BRAND_NAME = kimo-tools
+APP_PRODUCT_NAME = $(APP_BRAND_NAME)
 PRODUCT_NAME = $(APP_PRODUCT_NAME)
+APP_UPDATE_REPOSITORY = kimo-si/kitty-tools
 PRODUCT_MODULE_NAME = KittyTools
 MACOSX_DEPLOYMENT_TARGET = 15.0
 ARCHS = $(NATIVE_ARCH_ACTUAL)
@@ -228,7 +230,7 @@ INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.productivity
 ```
 #include "Base.xcconfig"
 BUNDLE_ID_SUFFIX = .dev
-APP_PRODUCT_NAME = Kitty Tools Dev
+APP_PRODUCT_NAME = $(APP_BRAND_NAME) Dev
 ```
 
 **`Release.xcconfig`**
@@ -263,9 +265,9 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 
 - 签名：Apple Development，开 Hardened Runtime，不公证。
 - 用户安装步骤：
-  1. 打开 DMG，把 App 拖进 Applications。和 Tauri 旧版同名：先删掉（或让访达替换）/Applications 里旧版的 `Kitty Tools.app`；从 Kitty Tools Native 升上来的，把旧的 `Kitty Tools Native.app` 也删掉，开机自启可能要在 设置 › 通用 重新打开一次。
+  1. 打开 DMG，把 `kimo-tools.app` 拖进「应用程序」。从原生 Kitty Tools 升上来时先退出并移走旧包；登录项若还指向旧包，在设置 › 通用重新开启。
   2. 双击时被系统拦下，提示「未打开」。签名是有效的，所以提示不是「已损坏」。
-  3. 到「系统设置 › 隐私与安全性」点「仍要打开」（尝试打开后约 1 小时内有效），然后输入密码。也可以直接执行 `xattr -dr com.apple.quarantine "/Applications/Kitty Tools.app"`。
+  3. 到「系统设置 › 隐私与安全性」点「仍要打开」，按系统提示完成授权。
 - **只有第一次安装要做上面的步骤**；之后走 App 内更新（D8），下载的包不带隔离标记，不用再放行。
 - 比现在的 adhoc 签名好的一点：签名要求绑定在证书上，所以更新后辅助功能授权不会丢。
 
@@ -284,7 +286,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 ### 8.5 发布
 
 1. 版本和 tag：Phase 1 发布版为 `0.1.0`，tag 是 `macos-v0.1.0`（打在 `main` 分支上，原名 `macos-native`）。原生版的版本号与 Tauri 版的 0.1.x 各自独立。
-2. （2026-09-27 起）在本仓库 github.com/YyAdnBug/kitty-tools 的网页上发**正式 Release**（标 latest，本机没装 `gh`）：tag `macos-v<版本>`，附 `build-dmg.sh` 出的 DMG（首次安装）、`_arm64.zip`（App 内更新下载它）和 `macos-update.json`（App 内更新先读 latest 上的它，不走 API；2026-11-09 起，见 mac-native §7）。和 Tauri 版的仓库无关。~~旧：勾选 pre-release，不要勾 Set as latest release。~~Tauri 的 updater 读的是 `releases/latest/.../latest.json`，一旦被原生版顶成 latest，Tauri 全平台的更新都会 404。
+2. 在 `APP_UPDATE_REPOSITORY` 配置的二开仓库发**正式 Release**（标 latest）：tag `macos-v<版本>`，附 `build-dmg.sh` 出的 DMG（首次安装）、`_arm64.zip`（App 内更新下载它）和 `macos-update.json`（App 内更新先读 latest 上的它，不走 API；2026-11-09 起，见 mac-native §7）。和 Tauri 版的仓库无关。~~旧：勾选 pre-release，不要勾 Set as latest release。~~Tauri 的 updater 读的是 `releases/latest/.../latest.json`，一旦被原生版顶成 latest，Tauri 全平台的更新都会 404。
 3. ~~GitCode：在确认它的 `releases/latest` 会排除预发布版本之前，不在 GitCode 上发布。~~（2026-09-27 废止，同下）
 4. ~~发布后，在 master 工作区执行 `pnpm release:verify`。不修改 `releases/latest.json`。~~（2026-09-27 废止：那是 Tauri 仓库的约束，原生版发在本仓库）
 5. CI：Phase 1 不做。以后需要时用 `macos-15` runner，并 `xcode-select` 到 `Xcode_26.3`，保持和本机同一版本。
@@ -1936,15 +1938,15 @@ PR #17 #20 都还开着，要回复 / 关闭等用户说）；README 和官网�
 
 > 2026-10-28（第三轮体检第 7 批）从 AGENTS.md「## 项目概述」原样挪来，一个字没改，之后不再更新；AGENTS 里现在只留一屏的概述。
 
-**kitty-tools 原生 macOS 版**：用 Swift 6 + SwiftUI / AppKit 重写的纯原生菜单栏工具，替代 Tauri 版的 macOS 端。基本自用：只支持 Apple 芯片（arm64），最低 macOS 15.0。
+**kimo-tools 原生 macOS 版**：基于上游 Kitty Tools 二次开发，用 Swift 6 + SwiftUI / AppKit 重写的纯原生菜单栏工具，替代 Tauri 版的 macOS 端。基本自用：只支持 Apple 芯片（arm64），最低 macOS 15.0。
 
 - **功能**：剪贴板历史、翻译（划词 / 输入 / 复制即译 / 截图翻译，全部翻译服务）、启动器（`Launcher/`，⌥Space 的搜索框）、启动台（`Launchpad/`，第八族，0.6.0，复刻 macOS 15 的全屏图标网格，只在 macOS 26 起出现：分页、搜索、拖动排序、文件夹、抖动删 App、触控板捏合、触发角、导入系统旧布局）、截图（`Screenshot/`：框选、标注、识字、钉图、长截图，长图拼完还能标注（整屏遮罩，同截图那套工具栏）；截图历史把截图 / 长截图 / 录制都收在一处、能回头接着改标注，2026-10-26）；**晾衣绳**（`Screenshot/Clothesline*.swift`，第十族，0.7.0，2026-10-26：截完图挂到屏幕顶上一根绳子上，鼠标停到菜单栏那一条上它就滑下来，和右下角的常驻缩略图二选一；绳子是真的物理（verlet 质点，`ClotheslineRope.swift`），挂上去、摇摆、取下都是它带的；挂的就是截图历史里的那几条，规矩在 `mac-overlay-panel` §14、长相在 `mac-whisker/capture.md`，PLAN §10「晾衣绳」、手测 `HANDTEST.md`「晾衣绳手测」1–22）、录屏与录音（`Screenshot/ScreenRecorder.swift`、`AudioRecorder.swift`）都已做完。程序坞预览（`DockPreview/`，第九族，0.7.0，2026-10-22 立项：鼠标停在程序坞的 App 图标上弹出它所有窗口的缩略图，点一张切过去；拍板页 `macos/build/research/dock-preview-2026-10-22/decisions.html` 全部按推荐，主会话在 `kitty-tools-macos-dock`（分支 `dock-wip`）分批做，第 1–3 批（底层、面板和设置页、内存和规则）和手测反馈做完，2026-10-24 随 0.7.0 并进 main、没发布，规矩在 `mac-dock-preview` + `mac-whisker/dock-preview.md`，PLAN §10「程序坞预览」）。状态屏（`StatusScreen/`：一键把所有屏幕盖上告示、拦住键盘鼠标，状态可自定义；2026-10-10 立项，0.4.0，代码已做完、待真机手测，PLAN §10「状态屏」；告示上的图标是 Microsoft Fluent Emoji 的动画表情，MIT，素材随包）。每个功能都能在 设置 › 通用 › 功能 里整个关掉（2026-10-22，`Shell/Feature.swift`，PLAN §10「功能开关」）。
 - **版本**：已发布 0.1.0、0.2.0、0.3.0（录屏录音）、0.3.1（第二轮体检）、0.3.2（设置的导出与导入、每天自动备份、启动器 port、长列表性能和常驻内存）、0.4.0（状态屏和全 App 的视觉对齐）、0.5.0（2026-10-19；便签）、0.6.0（latest，2026-10-24；启动台、功能开关、便签的四个新功能和同步。这几版都是用户要求发布的，真机手测都还没走完，`macos/HANDTEST.md`「状态屏手测」「视觉对齐手测」「便签手测」「启动台手测」「功能开关手测」照旧待做）。**便签**（屏幕边缘的便签，第七族，0.5.0）2026-10-12 立项、2026-10-18 八批全部做完，2026-10-19 随 0.5.0 发布：⌥N 快速记一条、全部便签窗口（便签墙 / 列表）、屏幕边缘那叠、浮动便签；正文是纯文本 + Markdown 显示样式、任务五种状态、文字颜色、行内图片、查找和撤销，能整个或单条导出成 Markdown 再导回，和剪贴板 / 启动器 / 划词翻译打通；便签有单独的库和每日备份、删除留 30 天。代码在 `Notes/`（39 个文件，§4 文件表），拍板和每批摘要看 PLAN §10「便签」（详细记录在 `docs/archive/PLAN-notes.md`），规矩在 mac-overlay-panel §3 §5 §12、mac-whisker-notes、mac-translate §5、mac-clipboard §1；手测 `HANDTEST.md`「便签手测」1–264，发版前先走冒烟清单「便签」15 步（用户试过几轮、报的问题都修了，清单还没逐条打勾）。**启动台**（第八族，0.6.0）2026-10-18 立项，四批、两轮审查和六轮真机反馈都做完，2026-10-19（0.5.0 发布后）并进 main，2026-10-24 随 0.6.0 发布：拍板和做法在 PLAN §10「启动台」，代码在 `Launchpad/`，规矩在 `mac-launchpad` + `mac-whisker/launchpad.md`，手测在 `macos/HANDTEST.md`「启动台手测」1–66（真机都还没走）。**0.7.0**（程序坞预览，第九族；全局同步：设置、快捷键、片段和收藏、生词本、网页搜索、翻译服务、状态屏的状态、启动器收藏都能在几台 Mac 之间同步）2026-10-24 从 `sync-wip` 并进 main、`MARKETING_VERSION` 升到 0.7.0，没发布（2026-10-26 又加了刘海岛交互：提示能悬停展开、带按钮，点刘海 / 快捷键能叫出最近的提示和快捷动作，PLAN §10「刘海岛交互」，手测 `HANDTEST.md`「刘海岛交互手测」1–23）：全局同步的拍板和每批摘要在 PLAN §10「全局同步」，手测 `HANDTEST.md`「全局同步手测」1–18、「程序坞预览手测」。哪些待手测、下一步做什么看 PLAN §12「现状」；手测条目和发版冒烟清单在 `macos/HANDTEST.md`；里程碑 M7–M13、已拍板的 D1–D5 与不迁清单见 PLAN §10。
-- Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），不再改（改了会丢偏好、钥匙串和授权）；产品名 / .app 名 `Kitty Tools`（Debug `Kitty Tools Dev`，2026-09-26 起，之前叫 Kitty Tools Native）。和 Tauri 旧版同名：安装前先删掉 /Applications 里旧版的 `Kitty Tools.app`。
+- Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），不再改（改了会丢偏好、钥匙串和授权）；产品名 / .app 名 `kimo-tools`（Debug `kimo-tools Dev`）。从原生 Kitty Tools 升级时沿用原数据目录和偏好域。
 - **规格**：各 `mac-*` 规则（界面与动效按 `mac-whisker`）+ 对标产品（启动器 Alfred / Raycast、翻译 Bob、截图 iShot / CleanShot、录屏 CleanShot / ⌘⇧5、录音 QuickTime / iShot、剪贴板 Paste）。`macos/PLAN.md` 只留仍有效的：§2 技术栈白名单、§4 架构与文件表、§8 打包、§10 约束与已拍板决定、§11 旧逻辑问题与语言规则、§12 现状与下一步；迁移期历史（§5 的 Tauri 映射、§6 数据迁移等）和已完成批次的实现记录原样归档在 `macos/docs/archive/`（PLAN 原位置写了去处）。
 - **Windows 原生版**在 `windows/`（C# + WinUI 3，2026-10-23 立项，第一版剪贴板 / 翻译 / 启动器 / 截图，用户的 agent 分批实现、Claude 审查）：规矩和方案在 `windows/AGENTS.md`、`windows/PLAN.md`。本文件其余部分和 `.claude/` 里的规则只管 `macos/`；Windows 的提交写成 `<type>(win): …`，release 不标 latest。
 
-**发布**：`macos/build-dmg.sh` 出 arm64 DMG 和 `_arm64.zip` → 本仓库 github.com/YyAdnBug/kitty-tools 发**正式 release、标 latest**（App 内更新读 `releases/latest`），两个文件都附上，tag `macos-v<版本>` 打在 `main`；**发布前须经用户确认**。细节见 §8.5、`build-dmg.sh` 头部注释和 AGENTS.md「开发约定」。
+**发布**：`macos/build-dmg.sh` 生成 DMG、更新 zip 和清单，在 `APP_UPDATE_REPOSITORY` 对应的仓库发**正式 release、标 latest**，tag `macos-v<版本>` 打在 `macos`；**发布前须经用户确认**。细节见 §8.5、`build-dmg.sh` 头部注释和 AGENTS.md「开发约定」。
 
 **接手须知**：先读 `AGENTS.md`、`.claude/rules/mac-native.md`，改哪块读哪块的技能（mac-overlay-panel / mac-clipboard / mac-translate；界面先读 mac-whisker 核心，再读那个界面的 `mac-whisker/<界面>.md`）。界面改动用 SnapshotProbeTests 屏幕外渲染自检，**不要**为截图弹出浮层（会抢用户键盘）；按需开关（默认都不跑；用法在 AGENTS.md「常用命令」和各测试文件头）：联网冒烟 `TEST_RUNNER_KITTY_LIVE_TRANSLATE=1`、链接预览 `TEST_RUNNER_KITTY_LIVE_LINK=1`、文件搜索 `TEST_RUNNER_KITTY_LIVE_FILES=1`、菜单开着时热键 `TEST_RUNNER_KITTY_LIVE_HOTKEY=1`、应用内更新整条链路 `TEST_RUNNER_KITTY_UPDATE_ZIP=<zip 路径>`、截图自检 `TEST_RUNNER_KITTY_SNAPSHOT_DIR=<目录>`、录屏 / 录音实录 `TEST_RUNNER_KITTY_LIVE_RECORD_DIR=<目录>`、内存探针 `TEST_RUNNER_KITTY_MEMORY_PROBE_DIR=<目录>`。用户要求：只兼容 macOS、不照搬 Tauri 实现、样式与交互可按 macOS 习惯重新设计、照搬行为前先核对旧逻辑有没有 bug（记入 §11）。
 

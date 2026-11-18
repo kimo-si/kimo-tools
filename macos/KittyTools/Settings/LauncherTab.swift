@@ -193,7 +193,7 @@ struct LauncherTab: View {
               statusText(
                 status, noun: "书签", empty: "书签文件里一条书签都没有", missing: "没找到书签文件")
             }
-            if status == .needsAccess { Text("在列表里点 +，选中 Kitty Tools") }
+            if status == .needsAccess { Text("在列表里点 +，选中 \(AppBrand.name)") }
           }
           .font(.subheadline)
           .foregroundStyle(.secondary)

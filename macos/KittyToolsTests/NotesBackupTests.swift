@@ -575,7 +575,7 @@ struct NotesBackupTests {
       Issue.record("应该是更新版本写的：\(result)")
       return
     }
-    #expect(reason.contains("更新版本的 Kitty Tools"))
+    #expect(reason.contains("更新版本的 kimo-tools"))
     #expect(files() == before)
     #expect(try bodies(in: database) == ["买菜", "周报", "备份后"])
     // 这种不弹框，用刘海岛说：一行放得下的话，完整的原因留在错误里（进日志）
@@ -783,7 +783,7 @@ struct NotesBackupTests {
     #expect(wording.buttons == ["重新开始", "这次先不用便签"])
     #expect(wording.choices == [.startFresh, .skip])
     #expect(wording.text.contains("也没有可用的备份") && !wording.text.contains("用备份："))
-    #expect(wording.text.contains("这次先不用便签：什么都不动，便签这次用不了，下次打开 Kitty Tools 时再试。"))
+    #expect(wording.text.contains("这次先不用便签：什么都不动，便签这次用不了，下次打开 kimo-tools 时再试。"))
     // 没有带着便签的每日 JSON 备份：不多那一段
     #expect(!wording.text.contains("从备份恢复"))
     #expect(!wording.text.contains("再问") && !wording.text.contains("这次运行里"))
@@ -792,7 +792,7 @@ struct NotesBackupTests {
     #expect(NotesRecovery.notice(for: .skipped, directory: home) == nil)
     let notice = NotesRecovery.notice(for: .stillBroken("磁盘坏了"), directory: home)
     #expect(notice?.title == "便签还是打不开")
-    #expect(notice?.text.hasPrefix("便签这次用不了，下次打开 Kitty Tools 时再试。") == true)
+    #expect(notice?.text.hasPrefix("便签这次用不了，下次打开 kimo-tools 时再试。") == true)
     #expect("\(NotesRecovery.Failure.stillBroken("磁盘坏了"))" == "磁盘坏了")
     #expect("\(NotesRecovery.Failure.skipped)" == "用户选了这次先不用便签")
     #expect(notice?.text.contains("别的功能不受影响") == true)

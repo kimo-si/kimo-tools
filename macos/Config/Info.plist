@@ -21,8 +21,12 @@
 	</array>
 	<key>KittyBuiltinZhipuKey</key>
 	<string>$(ZHIPU_BUILTIN_KEY)</string>
+	<key>KittyBrandName</key>
+	<string>$(APP_BRAND_NAME)</string>
 	<key>KittySigningTeam</key>
 	<string>$(DEVELOPMENT_TEAM)</string>
+	<key>KittyUpdateRepository</key>
+	<string>$(APP_UPDATE_REPOSITORY)</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

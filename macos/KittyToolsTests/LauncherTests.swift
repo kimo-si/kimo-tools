@@ -621,7 +621,7 @@ struct LauncherTests {
     let actions = LauncherItem.actions()
     #expect(
       actions.filter { !["copyToTranslate", "pause-clipboard"].contains($0.target) }
-        .allSatisfy { $0.subtitle == "Kitty Tools" })
+        .allSatisfy { $0.subtitle == "kimo-tools" })
     let screenshot = try #require(actions.first { $0.target == "screenshot" })
     #expect(LauncherMatch.score("capture", item: screenshot) > 0)
     #expect(screenshot.hotKeyAction == .screenshot)

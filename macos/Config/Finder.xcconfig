@@ -5,7 +5,7 @@ PRODUCT_MODULE_NAME = KittyToolsFinder
 // App 的 id 加 .finder：扩展靠它反推 App 网址的 scheme（FinderMenu）
 PRODUCT_BUNDLE_IDENTIFIER = $(APP_BUNDLE_ID)$(BUNDLE_ID_SUFFIX).finder
 INFOPLIST_FILE = Config/Finder-Info.plist
-// 系统设置的扩展列表里显示的名字（Debug 是 Kitty Tools Dev）
+// 系统设置的扩展列表里显示的名字（Debug 带 Dev）
 INFOPLIST_KEY_CFBundleDisplayName = $(APP_PRODUCT_NAME)
 INFOPLIST_KEY_LSUIElement =
 INFOPLIST_KEY_LSApplicationCategoryType =

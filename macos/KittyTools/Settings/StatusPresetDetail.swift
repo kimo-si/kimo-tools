@@ -334,7 +334,7 @@ struct EmojiPackToggle: View {
   @AppStorage(Prefs.emojiPackDownloads) private var downloads = true
 
   static let footnote =
-    "在「动画表情」里挑的，第一次用到时从 Kitty Tools 在 GitHub 上的发布页下载那个动画（一个约 0.2 MB，不带任何个人信息），"
+    "在「动画表情」里挑的，第一次用到时从 上游 Kitty Tools 项目在 GitHub 上的发布页下载那个动画（一个约 0.2 MB，不带任何个人信息），"
     + "存在这台 Mac 上、最多 50 MB；没下好、没联网时先显示缩略图。"
 
   var body: some View {

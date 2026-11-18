@@ -7,9 +7,9 @@ import Foundation
 
 nonisolated enum ScriptAIGuide {
   static let text = """
-    # 写一个 Kitty Tools 的脚本命令
+    # 写一个 \(AppBrand.name) 的脚本命令
 
-    Kitty Tools 是一个 macOS 菜单栏工具，它的启动器能跑用户写的脚本：一个脚本文件就是启动器里的一条命令。请按下面的规矩，为最后一段「我要的脚本」写一个脚本。**只输出这一个完整的脚本文件，放在一个代码块里，不要别的解释。**
+    \(AppBrand.name) 是一个 macOS 菜单栏工具，它的启动器能跑用户写的脚本：一个脚本文件就是启动器里的一条命令。请按下面的规矩，为最后一段「我要的脚本」写一个脚本。**只输出这一个完整的脚本文件，放在一个代码块里，不要别的解释。**
 
     ## 文件格式
 
@@ -45,7 +45,7 @@ nonisolated enum ScriptAIGuide {
     ## 运行环境
 
     - 用用户自己终端里的 PATH；工作目录是脚本所在的文件夹；没有标准输入（读不到键盘）。
-    - 能用的环境变量：`KITTY_SCRIPT_DIR`（脚本所在文件夹）、`KITTY_DATA_DIR`（Kitty Tools 的数据目录，要存东西就存这下面自己建的子文件夹）、`KITTY_VERSION`。
+    - 能用的环境变量：`KITTY_SCRIPT_DIR`（脚本所在文件夹）、`KITTY_DATA_DIR`（\(AppBrand.name) 的数据目录，要存东西就存这下面自己建的子文件夹）、`KITTY_VERSION`。
     - 读剪贴板用 `pbpaste`。mode 是 paste / copy 时直接把结果打印出来就行，不用自己写剪贴板。
     - 退出码是 0 算成功；不是 0 算出错，提示里显示输出的最后一行。
 

@@ -132,7 +132,7 @@ struct ScriptGuidePage: View {
           )
           .fixedSize(horizontal: false, vertical: true)
           Text(
-            "工作目录是脚本所在的文件夹。能用的环境变量：KITTY_SCRIPT_DIR（脚本所在的文件夹）、KITTY_DATA_DIR（Kitty Tools 的数据目录）、KITTY_VERSION。退出码不是 0 算出错，最后一行显示在刘海岛上。"
+            "工作目录是脚本所在的文件夹。能用的环境变量：KITTY_SCRIPT_DIR（脚本所在的文件夹）、KITTY_DATA_DIR（\(AppBrand.name) 的数据目录）、KITTY_VERSION。退出码不是 0 算出错，最后一行显示在刘海岛上。"
           )
           .fixedSize(horizontal: false, vertical: true)
           LabeledContent {
@@ -156,7 +156,7 @@ struct ScriptGuidePage: View {
         }
         Section {
           Text(
-            "脚本以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制、完全磁盘访问授权，只放你信得过的。从网上下载的脚本，第一次运行前会先在启动器里给你看一眼全文。"
+            "脚本以你的身份运行，能用 \(AppBrand.name) 已有的辅助功能、屏幕录制、完全磁盘访问授权，只放你信得过的。从网上下载的脚本，第一次运行前会先在启动器里给你看一眼全文。"
           )
           .fixedSize(horizontal: false, vertical: true)
           Text("脚本文件不跟着同步，也不进设置的导出；别名和开关跟着走。几台 Mac 共用，就把脚本文件夹放进 iCloud 云盘，在每台「添加文件夹…」。")

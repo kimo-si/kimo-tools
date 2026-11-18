@@ -3,6 +3,8 @@
 <!-- 访达扩展的局部 Info.plist：和生成的合并。KittySigningTeam 用于校验接收右键动作的主程序。 -->
 <plist version="1.0">
 <dict>
+	<key>KittyBrandName</key>
+	<string>$(APP_BRAND_NAME)</string>
 	<key>KittySigningTeam</key>
 	<string>$(DEVELOPMENT_TEAM)</string>
 	<key>NSExtension</key>

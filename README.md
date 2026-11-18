@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="macos/KittyTools/Resources/Assets.xcassets/AppIcon.appiconset/icon_256x256@2x.png" width="128" alt="Kitty Tools 图标">
+  <img src="macos/KittyTools/Resources/Assets.xcassets/AppIcon.appiconset/icon_256x256@2x.png" width="128" alt="kimo-tools 图标">
 </p>
 
-<h1 align="center">Kitty Tools</h1>
+<h1 align="center">kimo-tools</h1>
 
 <p align="center">
-  纯原生的 macOS 菜单栏效率工具：剪贴板历史 · 启动器 · 翻译 · 截图 · 录屏录音 · 便签 · 启动台 · 状态屏 · 程序坞预览
+  原生 macOS 菜单栏效率工具，集成剪贴板、启动器、翻译、OCR、截图和录制，并可按需添加插件。
 </p>
 
 <p align="center">
@@ -13,18 +13,21 @@
   <img src="https://img.shields.io/badge/Apple%20Silicon-arm64-555" alt="Apple Silicon">
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white" alt="Swift 6.2">
   <img src="https://img.shields.io/badge/%E7%AC%AC%E4%B8%89%E6%96%B9%E4%BE%9D%E8%B5%96-0-E8577A" alt="零第三方依赖">
-  <a href="https://github.com/YyAdnBug/kitty-tools/releases/latest"><img src="https://img.shields.io/github/v/release/YyAdnBug/kitty-tools?display_name=release&label=%E4%B8%8B%E8%BD%BD" alt="下载最新版"></a>
 </p>
+
+**kimo-tools 基于原生 macOS 版 Kitty Tools 二次开发。** 本仓库维护自己的构建与改动，所用素材见文末致谢。[上游项目 YyAdnBug/kitty-tools](https://github.com/YyAdnBug/kitty-tools)
 
 <p align="center">
-  <img src="docs/images/welcome.png" width="580" alt="欢迎引导：全部功能一览">
+  <img src="docs/images/welcome.png" width="580" alt="kimo-tools 欢迎引导与功能选择">
 </p>
 
-Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程序坞。九个功能都用全局快捷键（或菜单栏、启动器）呼出，弹出时不抢前台 App 的焦点，选好内容能直接粘贴回原来的 App；用不上的功能可以在设置里整个关掉。识字、语种检测和敏感内容识别都在本机完成，密钥存在系统钥匙串里。提示从屏幕顶部的刘海冒出来，设置和数据每天自动备份、能在几台 Mac 之间同步。支持浅色 / 深色外观，强调色可以自选，新版本在 App 内一键更新。
+kimo-tools 使用 Swift 6、SwiftUI 和 AppKit。点击菜单栏图标打开主界面，右键点击查看菜单，常用操作可用全局快捷键调用。默认 OCR 可离线识字，翻译和联网 OCR 的自配密钥保存在系统钥匙串里。设置与数据支持本机备份、多台 Mac 间同步和导入导出。
 
-> 个人项目，持续更新中。只支持 Apple 芯片、macOS 15 及以上。
+系统要求为 macOS 15 或更新版本。安装与本机打包以 Apple 芯片（arm64）为主，Intel 可从源码构建。
 
 ## 功能
+
+首次引导会列出全部功能与插件，并显示各项用途。新装默认启用剪贴板、启动器、翻译、OCR 和截图，录制可按需打开。也可以在「设置 › 关于」重看引导。
 
 ### 📋 剪贴板历史
 
@@ -57,6 +60,7 @@ Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程�
 - **系统设置直达**：搜「蓝牙」「显示器」「隐私与安全」，↩ 跳到对应的设置页
 - **网页搜索**：`g swift`、`gh swift` 这样用关键词直达，预置 Google、Bing、百度、GitHub、知乎、哔哩哔哩等 13 个引擎，可自定义搜索和快捷链接
 - **浏览器书签与历史**：Safari、Chrome、Edge、Arc、Brave、Firefox 等，只列本机装了的，带网站图标；输入网址或 `~/` 路径直接打开
+- **脚本命令**：一个脚本文件对应一条启动器命令。内置脚本和自定义脚本的别名、开关在设置里管理
 - `cb 关键词` 跳到剪贴板历史搜索，`fy 文字` 直接翻译，⌘K 或 → 打开动作菜单
 
 ### 🌐 翻译
@@ -64,14 +68,19 @@ Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程�
 <img src="docs/images/translate.png" width="360" align="right" alt="翻译浮窗：两个大模型同时流式输出">
 
 - **划词翻译**：在任意 App 里选中文字按快捷键就翻译，浮窗跟着鼠标出现；取不到选区时自动改用 ⌘C 取词，用完把剪贴板恢复原样
-- **输入翻译、复制即译、截图翻译**：框选屏幕上的文字，本机识别后翻译；也可以在设置里打开「把译文直接盖回截图上」，留在截图页里看效果
-- **多服务并行**：智谱 GLM（内置，开箱即用）、百度、有道、Google、DeepL / DeepLX、微软（不填密钥也能用）、火山、腾讯，以及 OpenAI / Azure OpenAI / Anthropic 协议的大模型；DeepSeek、Kimi、通义千问、硅基流动、OpenRouter、Gemini、Ollama 等有预设，填好密钥就能用；大模型的译文边生成边显示
+- **输入翻译、复制即译、截图翻译、原图翻译**：框选屏幕上的文字后翻译，也可用原图翻译把译文直接盖回截图
+- **多服务并行**：支持智谱 GLM、百度、有道、Google、DeepL / DeepLX、微软、火山、腾讯，以及 OpenAI / Azure OpenAI / Anthropic 协议的大模型。按服务要求配置密钥，大模型译文边生成边显示
 - **查词**：单个词显示系统词典释义卡片，大模型按词典格式回答
 - **替换原文**：用译文直接替换原 App 里选中的文字，也可以设一个静默热键，一按即替换
 - **翻译历史 / 生词本**：可搜索、收藏，导出 CSV 或可直接导入 Anki 的 TSV
 - 支持 11 种语言，目标语言选「自动」时在第一 / 第二语言之间互译；支持朗读、自动复制译文
 
 <br clear="right">
+
+### OCR
+
+- 按 `⌥⇧O` 框选屏幕区域，在浮窗里查看、选择和拷贝识别结果
+- 支持离线的 Apple 系统识别，也可在「设置 › OCR」配置百度、腾讯或火山的识别服务
 
 ### ✂️ 截图
 
@@ -86,7 +95,7 @@ Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程�
 - **长截图**：框选后按 S，在选区里滚动就自动拼接，按空格自动滚动
 - **长截图**拼完还能标注，十种工具和截图里的一样
 - **截图历史**：截图、长截图、钉过的图、录屏录音和 GIF 都留在一处，按日期排好、能搜能筛；双击一张回到原图上接着改标注，还能重新拷贝、钉回原来的位置
-- 截图后缩略图停在屏幕右下角，可以直接拖出成文件；识字、取色等结果从刘海处弹出轻提示
+- 截图后可选择在屏幕角落留缩略图，或挂在屏幕顶部的晾衣绳上，方便拖出成文件
 
 <p align="center">
   <img src="docs/images/screenshot-scroll.png" width="800" alt="长截图：滚动时自动拼接，侧边实时预览">
@@ -97,6 +106,10 @@ Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程�
 - **录屏**：和截图一样框选一块区域或整块屏幕，↩ 开始，默认倒数 3 秒后开录；录系统声音和麦克风，可以显示点按和按下的键；菜单栏计时，再按一次快捷键停止并保存
 - **录音**：先出一个控制条，选好来源（麦克风 / 系统声音 / 两者）再开始，电平实时显示，存成 m4a
 - 录完的视频卡停在屏幕角落，可以拷贝、拖走、**转成 GIF** 或压缩；帧率、清晰度、H.264 / HEVC 都能在 设置 › 录制 里选
+
+## 插件
+
+首次安装时插件默认关闭。可在欢迎引导勾选，或之后到「设置 › 通用 › 功能 › 插件」添加。
 
 ### 🗒️ 便签
 
@@ -110,6 +123,10 @@ Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程�
 - **浮在屏幕上**：把便签拖出来钉在桌面，固定后一直在别的窗口上面，重启后回到原处
 - **正文**：纯文本 + Markdown 样式（标题、列表、引用、代码块、链接），五种任务状态、文字颜色、行内图片（能裁切、选宽度）、便签内查找、撤销重做
 - 整个或单条导出成 Markdown，再导回来；和剪贴板、启动器、划词翻译打通；单独的库和每日备份
+
+### 提醒
+
+- 支持单次和周期提醒，可从启动器新建。到点后可通过刘海岛、屏幕边框或全屏提示，也可进入状态屏
 
 ### 🔲 启动台（macOS 26 起）
 
@@ -128,21 +145,47 @@ Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程�
 - 告示的文字、动画表情、样式都能自己改，可以有好几个状态，按快捷键先选一个再进
 - 按住 Esc 2 秒（或用鼠标按住屏幕底部的提示）退出，可以再加一道退出密码
 
-### 🪟 程序坞预览（默认关）
+### 🪟 程序坞预览
 
 <p align="center">
   <img src="docs/images/dock-preview.png" width="560" alt="程序坞预览：一个 App 的所有窗口">
 </p>
 
 - 鼠标停在程序坞的 App 图标上，上方弹出它所有窗口的缩略图（最小化的、隐藏的、别的桌面上的也列出来），点一张切过去，悬停点 ✕ 关掉
-- 在 设置 › 程序坞预览 里打开；要辅助功能授权，有屏幕录制授权才有缩略图
+- 添加插件后按提示授权。辅助功能用于读取和操作窗口，屏幕录制用于生成缩略图
+
+### 访达右键
+
+- 从访达菜单拷贝路径、新建文件、用指定应用打开、移动或复制文件，以及压缩和解压
+- 添加插件后，在系统设置里启用访达扩展；具体菜单项可在「设置 › 访达右键」选择
+
+### 默认应用
+
+<p align="center">
+  <img src="docs/images/default-apps.png" width="590" alt="默认应用：按文件扩展名选择打开应用">
+</p>
+
+- 按文件扩展名指定双击时使用的应用，可以在设置里查看和修改文件关联
+
+### 应用输入法
+
+<p align="center">
+  <img src="docs/images/app-input.png" width="590" alt="应用输入法：默认输入法、中英文模式和应用专属规则">
+</p>
+
+- 设置切换应用时使用的默认输入法，为单个应用配置例外，也可为支持的输入法指定中英文模式
+
+### 合盖动效
+
+- 在兼容的 MacBook 上，合上屏幕时让内建屏幕画面随角度倾斜、模糊、渐暗。可在「设置 › 合盖动效」预览
 
 ### 🏝️ 刘海岛
 
 - 复制好了、存好了、出错了这些提示都从刘海里长出来，鼠标挪上去停住、展开看全文和按钮（「在访达中显示」「撤销」「重试」…）
-- 点一下刘海叫出最近 10 条提示和一排快捷动作（截图、识字、截图翻译、录屏、录音、快速记一条）；没有刘海的屏幕用快捷键打开
+- 添加插件后，可点刘海查看快捷动作与最近提示，也能显示录制计时、提醒倒数和正在播放等活动
+- 可按需开启系统提示、下一个日程、音量与亮度提示。没有刘海的屏幕也能通过菜单栏或快捷键使用
 
-### ⚙️ 设置
+## 设置与数据
 
 <p align="center">
   <img src="docs/images/settings.png" width="720" alt="设置：外观、强调色、菜单栏图标和开机自启">
@@ -151,7 +194,7 @@ Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程�
 外观（跟随系统 / 浅色 / 深色）、8 种强调色、开机自启、权限状态、全局快捷键录制都在设置窗里，侧栏可以搜索设置项。菜单栏图标可以换成彩色，也可以整个隐藏（快捷键照常能用）。
 
 - **功能开关**：设置 › 通用 › 功能 里每个功能一个开关，关掉的入口、快捷键、后台活全都停掉，打开立即回来
-- **同步**：选一个文件夹（比如 iCloud 云盘），设置与快捷键、片段和收藏、生词本、网页搜索、翻译服务、状态屏的状态、启动器收藏、便签就能在几台 Mac 之间同步，每类一个开关；密钥不同步
+- **同步**：可选共享文件夹（如 iCloud 云盘）或 WebDAV，在几台 Mac 之间按类别同步设置、快捷键和数据；密钥不同步
 - **备份与导出**：每天自动备份一份（留最近 7 份，可以另存到别的文件夹），设置与数据能导出成一个文件再导入（密钥可以加密带上）
 - **快捷键速查表**：各设置页的「查看全部快捷键…」，按功能分类、能搜索，从哪一页点开就停在哪一类
 
@@ -164,9 +207,11 @@ Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程�
 | 划词翻译             | `⌥D`     |
 | 输入翻译             | `⌥T`     |
 | 截图翻译             | `⌥S`     |
+| 原图翻译             | `⌥⇧S`    |
 | 截图                 | `⌥A`     |
 | 截取上次区域         | `⌥X`     |
 | 识字（OCR / 二维码） | `⌥O`     |
+| 截图 OCR 浮窗        | `⌥⇧O`    |
 | 录屏                 | `⌥R`     |
 | 快速记一条（便签）   | `⌥N`     |
 
@@ -174,12 +219,9 @@ Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程�
 
 ## 安装
 
-1. 从 [Releases](https://github.com/YyAdnBug/kitty-tools/releases/latest) 下载 `Kitty.Tools_x.y.z_arm64.dmg`（`_arm64.zip` 是 App 内更新用的，不用手动下载），或按下面的步骤自己打包。
-2. 把 `Kitty Tools.app` 拖进「应用程序」。
-3. App 使用 Apple Development 签名、没有公证，第一次打开会被系统拦下（提示「未打开」，不是「已损坏」）：到「系统设置 › 隐私与安全」里点「仍要打开」。也可以在终端执行：
-   ```bash
-   xattr -dr com.apple.quarantine "/Applications/Kitty Tools.app"
-   ```
+1. 在 [kimo-tools 发布页](https://github.com/kimo-si/kitty-tools/releases) 查找 `kimo-tools_x.y.z_arm64.dmg`，也可按下文从源码打包。
+2. 把 `kimo-tools.app` 拖进「应用程序」。从原生 Kitty Tools 升级时，先退出并移走旧应用包，避免两个同标识的应用同时安装。新版在同一 macOS 用户下会读取原来的本机配置与数据。
+3. 本机打包使用 Apple Development 签名。首次打开如果被系统拦下，在「系统设置 › 隐私与安全」选择「仍要打开」。
 4. 按首次启动的欢迎引导授权：
    - **辅助功能**：粘贴回原 App、划词翻译、替换原文、长截图自动滚动、录屏显示按键、程序坞预览
    - **屏幕录制**：截图、截图翻译、识字、长截图、录屏、录系统声音、程序坞预览的缩略图（授权后可能需要重新打开 App）
@@ -187,7 +229,7 @@ Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程�
    - **文件和文件夹**：只在启动器文件搜索时按需申请
    - **完全磁盘访问权限**（可选）：只在要搜 Safari 书签和历史时需要
 
-只有第一次安装要放行；之后有新版本时菜单栏会出现「更新到 x.y.z…」，一键更新，不用再放行。
+DMG 可以单独分享。要把设置交给另一台 Mac，在「设置 › 通用」导出选定的项目，然后到目标 Mac 导入。系统权限由各台 Mac 自行授权。
 
 > 新装（或系统大版本更新）后的第一次识字，系统要先为本 App 准备识字模型，大约要一分钟。App 启动后会在后台自己准备好；要是赶上还没准备完，刘海岛会说「正在准备识字模型」并显示已等了多久，之后识字都是一眨眼的事。
 
@@ -202,18 +244,18 @@ Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程�
 先在 Xcode 的「设置 › 账户」登录自己的 Apple 账户，准备一张带私钥的 Apple Development 证书，并记下该证书所属的 10 位 Team ID。可以在「管理证书」中创建开发证书。[Apple 的签名证书说明](https://developer.apple.com/documentation/xcode/sharing-your-teams-signing-certificates)
 
 ```bash
-git clone --branch macos --single-branch https://github.com/kimo-si/kitty-tools.git
-cd kitty-tools
+git clone --branch macos --single-branch https://github.com/kimo-si/kitty-tools.git kimo-tools
+cd kimo-tools
 
 # 把下方的 TEAM_ID 值换成你自己的团队 ID。
 TEAM_ID=YOUR_TEAM_ID
 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   -configuration Debug -destination 'platform=macOS' -derivedDataPath macos/build/dev \
   DEVELOPMENT_TEAM="$TEAM_ID" build &&
-  open "macos/build/dev/Build/Products/Debug/Kitty Tools Dev.app"
+  open "macos/build/dev/Build/Products/Debug/kimo-tools Dev.app"
 ```
 
-构建成功后，应用会在菜单栏显示 Kitty Tools 图标。Debug 版使用独立的应用标识，首次运行按引导授权即可。要体验合盖动效，可在「设置 › 通用 › 功能 › 插件」添加。
+构建成功后，应用会在菜单栏显示 kimo-tools 图标。Debug 版使用独立的应用标识，首次运行按引导授权即可。
 
 如果主要用 Xcode 开发，可以把签名团队写入本机的 `macos/Config/Development.xcconfig`。随后打开 `macos/KittyTools.xcodeproj`，选中 `KittyTools` scheme 和 `My Mac`，按 ⌘R 构建并启动。此配置只用于 Debug，Git 会忽略它。
 
@@ -250,6 +292,7 @@ windows/                 # Windows 原生版（C# + WinUI 3，开发中）
 
 ## 致谢
 
+- 感谢原作者 **YyAdnBug** 和上游贡献者。kimo-tools 基于原项目的 macOS 原生版二次开发，沿用了上游的应用结构、功能实现和图标设计。[原项目 Kitty Tools](https://github.com/YyAdnBug/kitty-tools)
 - 便签的交互和数值参考了 [Noty](https://github.com/aimen08/noty)（MIT），代码全部自己重写
 - 状态屏的动画表情来自 [Microsoft Fluent Emoji Animated](https://github.com/microsoft/fluentui-emoji-animated)（MIT）
 - 合盖动效改编自 [Mac Duo](https://github.com/sumimakito/Mac-Duo)（Apache 2.0），[署名与许可](macos/KittyTools/Resources/mac-duo-LICENSE.txt)随应用提供

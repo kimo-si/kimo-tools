@@ -56,7 +56,7 @@ struct AboutTab: View {
       VStack(spacing: 0) {
         VStack(spacing: 12) {
           BrandIcon(size: 128)
-          Text("Kitty Tools")
+          Text(AppBrand.name)
             .font(.system(size: 26, weight: .bold, design: .rounded))
           Text("版本 \(Self.version)" + (Self.build.map { "（\($0)）" } ?? ""))
             .font(.system(size: 12, weight: .medium))
@@ -100,6 +100,8 @@ struct AboutTab: View {
   /// 素材和参考产品的出处：更新日志下面的小字，每行后面跟着打开随包那份许可全文的链接
   private var credits: some View {
     VStack(alignment: .leading, spacing: 4) {
+      Link("上游项目 · YyAdnBug / Kitty Tools", destination: Self.upstream)
+        .buttonStyle(.plain).foregroundStyle(Style.brandInk).pointerStyle(.link)
       credit(Self.emojiCredit, license: "status-emoji-LICENSE")
       credit(Self.noteCredit, license: "notes-LICENSE")
       credit("合盖动效基于 Makito 的 Mac Duo（Apache 2.0 许可）", license: "mac-duo-LICENSE")
@@ -120,6 +122,7 @@ struct AboutTab: View {
 
   static let emojiCredit = "状态屏的动画表情来自 Microsoft Fluent Emoji（MIT 许可）"
   static let noteCredit = "便签的交互参考了 Noty（MIT 许可）"
+  private static let upstream = URL(string: "https://github.com/YyAdnBug/kitty-tools")!
 
   /// 版本胶囊下面的更新状态。强调色只给「现在该操作的」：有新版本时的「更新并重新打开」；其余是文字链接
   private func updateRow(_ updater: Updater) -> some View {
@@ -228,7 +231,7 @@ struct BrandIcon: View {
         withAnimation(Style.Motion.settle.animation()) { tilt = .zero }
       }
     }
-    .accessibilityLabel("Kitty Tools 图标")
+    .accessibilityLabel("\(AppBrand.name) 图标")
   }
 }
 

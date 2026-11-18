@@ -65,7 +65,7 @@
 		6A0000000000000000000031 /* Finder.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Finder.xcconfig; sourceTree = "<group>"; };
 		6A0000000000000000000021 /* KittyToolsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KittyToolsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6A0000000000000000000022 /* Tests.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Tests.xcconfig; sourceTree = "<group>"; };
-		6A0000000000000000000006 /* Kitty Tools.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Kitty Tools.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		6A0000000000000000000006 /* kimo-tools.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "kimo-tools.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6A0000000000000000000007 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 		6A0000000000000000000008 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		6A0000000000000000000009 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
@@ -144,7 +144,7 @@
 		6A0000000000000000000003 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				6A0000000000000000000006 /* Kitty Tools.app */,
+				6A0000000000000000000006 /* kimo-tools.app */,
 				6A0000000000000000000021 /* KittyToolsTests.xctest */,
 				6A0000000000000000000030 /* KittyToolsFinder.appex */,
 				6A0000000000000000000040 /* KittyToolsNowPlaying.xpc */,
@@ -215,7 +215,7 @@
 			packageProductDependencies = (
 			);
 			productName = KittyTools;
-			productReference = 6A0000000000000000000006 /* Kitty Tools.app */;
+			productReference = 6A0000000000000000000006 /* kimo-tools.app */;
 			productType = "com.apple.product-type.application";
 		};
 		6A0000000000000000000033 /* KittyToolsFinder */ = {

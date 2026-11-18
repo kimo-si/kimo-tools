@@ -3,7 +3,7 @@
 // 用法：swift macos/brand-icons.swift [预览目录]
 // 写入 KittyTools/Resources/Assets.xcassets：AppIcon 10 张 PNG（1024 画布、主体 824、四边留 100、超椭圆圆角约 185、
 // 烘焙阴影 y 10 / σ 10 / 黑 30%；16、32 像素用手调的简化版）和菜单栏模板图 StatusIcon（22 × 16 pt，@1x / @2x）；
-// 另写 Config/dmg-background.tiff（DMG 窗口背景：设计区 600 × 400 pt 在左上角，奶油底、字标 Kitty Tools、虚点弧线箭头、
+// 另写 Config/dmg-background.tiff（DMG 窗口背景：设计区 600 × 400 pt 在左上角，奶油底、字标 kimo-tools、虚点弧线箭头、
 // 「仍要打开」路径；整张画布 2560 × 1600 pt，窗口拉大也不露白；@1x + @2x，Deflate；改产品名或文案也改这里）。
 // 只用 AppKit / CoreGraphics / CoreText / ImageIO，几何都在这一个文件里：改角色就改这里再跑一遍。给了预览目录时另存放大的预览图。
 // 例外：彩色菜单栏图标（Shell/StatusItem.swift 的 menuBarImage）从 1024 的 AppIcon 按同样的留白 100 / 主体 824 /
@@ -290,7 +290,7 @@ func dmgBackground(scale: Int) -> CGImage {
     ctx.textPosition = point((600 - CTLineGetTypographicBounds(line, nil, nil, nil)) / 2, y)
     CTLineDraw(line, ctx)
   }
-  text("Kitty Tools", .systemFont(ofSize: 24, weight: .bold), hex(0xD12A5F), y: 62.5)
+  text("kimo-tools", .systemFont(ofSize: 24, weight: .bold), hex(0xD12A5F), y: 62.5)
   // 系统字体回退到的 .PingFangUITextSC 会把「」挤成半宽，这行直接用 PingFang SC 保持全宽
   text(
     "把左边的图标拖到「应用程序」文件夹，就装好了", NSFont(name: "PingFangSC-Regular", size: 13)!,

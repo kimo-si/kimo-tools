@@ -6,6 +6,8 @@ import UniformTypeIdentifiers
 
 struct DefaultAppsTab: View {
   var appliesTextPresetOnOpen = true
+  /// 文档截图使用示例关联，不读取正在使用的默认应用。
+  var previewRows: [DefaultFileType.Row]? = nil
   @AppStorage(Prefs.defaultAppExtensions) private var extensions = DefaultFileType.presetExtensions
   @AppStorage(Feature.defaultApps.prefsKey) private var enabled = Feature.defaultApps.defaultOn
   @AppStorage(Prefs.defaultAppWinCPresetHandled, store: DefaultFileType.sharedDefaults)
@@ -41,7 +43,7 @@ struct DefaultAppsTab: View {
     .onChange(of: enabled, refresh)
     .onSettingsBecameKey(perform: refresh)
     .task(id: enabled) {
-      guard enabled, appliesTextPresetOnOpen, !presetHandled else { return }
+      guard enabled, previewRows == nil, appliesTextPresetOnOpen, !presetHandled else { return }
       await applyTextPreset()
     }
     .alert(
@@ -111,6 +113,10 @@ struct DefaultAppsTab: View {
 
   /// 从系统重新读取各类型的默认应用，包含在其他应用中修改过的关联。
   private func refresh() {
+    if let previewRows {
+      rows = previewRows
+      return
+    }
     winC = NSWorkspace.shared.urlForApplication(withBundleIdentifier: DefaultFileType.winCBundleID)
     guard enabled else { return }
     rows = types.map(DefaultFileType.Row.init)
@@ -263,10 +269,17 @@ struct DefaultFileType: Equatable {
 
     /// 默认项由 Launch Services 决定，和应用候选列表分别查询。
     init(_ fileType: DefaultFileType) {
-      self.fileType = fileType
       let workspace = NSWorkspace.shared
-      current = workspace.urlForApplication(toOpen: fileType.type).map(Application.init)
-      candidates = workspace.urlsForApplications(toOpen: fileType.type).map(Application.init)
+      self.init(
+        fileType, current: workspace.urlForApplication(toOpen: fileType.type).map(Application.init),
+        candidates: workspace.urlsForApplications(toOpen: fileType.type).map(Application.init))
+    }
+
+    /// 用指定应用构建一行，供生产查询和屏外示例共用。
+    init(_ fileType: DefaultFileType, current: Application?, candidates: [Application]) {
+      self.fileType = fileType
+      self.current = current
+      self.candidates = candidates
     }
   }
 }
