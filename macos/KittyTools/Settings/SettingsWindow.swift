@@ -19,7 +19,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   // 便签、提醒、状态屏一组，启动台、程序坞预览一组（启动台原来在便签后面）
   // 2026-11-13 起便签之后都是插件（Feature.plugins），刘海岛（2026-11-12 PR #17 加的页）也成了插件、挪到最后
   case general, clipboard, launcher, translate, ocr, screenshot, record, notes, reminders,
-    statusScreen, launchpad, dockPreview, finderMenu, defaultApps, appInput, island, hotkeys, about
+    statusScreen, launchpad, dockPreview, finderMenu, defaultApps, appInput, lidDepth, island,
+    hotkeys, about
 
   var id: String { rawValue }
 
@@ -33,7 +34,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     [.general], [.clipboard, .launcher, .translate, .ocr], [.screenshot, .record],
     [
       .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .defaultApps,
-      .appInput, .island,
+      .appInput, .lidDepth, .island,
     ],
     [.hotkeys, .about],
   ]
@@ -65,7 +66,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .clipboard, .launcher, .translate, .ocr: "文字与搜索"
     case .screenshot, .record: "截图与录制"
     case .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .defaultApps,
-      .appInput, .island:
+      .appInput, .lidDepth, .island:
       "插件"
     case .general, .hotkeys, .about: nil
     }
@@ -89,6 +90,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .general: "通用"
     case .defaultApps: "默认应用"
     case .appInput: "应用输入法"
+    case .lidDepth: "合盖动效"
     case .island: "刘海岛"
     case .clipboard: "剪贴板"
     case .launcher: "启动器"
@@ -112,6 +114,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .general: "kitty.general"
     case .defaultApps: "app.badge.checkmark"
     case .appInput: "keyboard"
+    case .lidDepth: "laptopcomputer"
     case .island: HotKeyAction.island.symbol
     case .clipboard: HotKeyAction.clipboard.symbol
     case .launcher: HotKeyAction.launcher.symbol
@@ -138,6 +141,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .general: Style.Family.general
     case .defaultApps: Style.Family.finderMenu
     case .appInput: Style.Family.keyboard
+    case .lidDepth: Style.Family.search
     case .island: Style.Family.general
     case .clipboard: Style.Family.clipboard
     case .launcher: Style.Family.command
@@ -161,6 +165,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .general: "功能、外观、菜单栏、登录时打开、权限、同步、导出与导入、数据目录"
     case .defaultApps: "选择访达双击文件时使用的应用"
     case .appInput: "切换 App 时自动选择输入法和中英文模式"
+    case .lidDepth: "调节 MacBook 合盖时的透视、模糊和亮度，或直接预览"
     case .island: "正在播放、下一个日程和月历、音量和亮度、点刘海打开的快捷动作和最近的提示、自动展开、触感反馈、系统提示"
     case .clipboard: "历史上限、面板、内容格式和隐私"
     case .launcher: "搜索 App、文件、书签与历史、网页搜索与快捷链接、脚本命令、命令和别名"
@@ -186,6 +191,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       ["文件关联", "默认打开方式", "扩展名", "后缀", "双击", "UTI", "PDF", "Markdown"]
     case .appInput:
       ["键盘", "输入源", "中英文", "中文模式", "英文模式", "搜狗拼音", "IME"]
+    case .lidDepth:
+      Feature.lidDepth.pluginWords + ["合盖角度", "透视", "模糊", "渐暗", "实时画面"]
     case .general:
       [
         "外观", "浅色", "深色", "暗黑", "主题", "跟随系统", "强调色", "主题色", "颜色", "开机", "登录", "自启", "权限", "辅助功能",

@@ -387,6 +387,19 @@ enum Prefs {
   /// 程序坞预览：按 ⌘Tab 切换时也在切换器上方弹窗口预览（2026-11-06 拍板 C2，默认开；程序坞预览关着时不生效）
   nonisolated static let dockPreviewCmdTab = "dockPreviewCmdTab"
 
+  // 合盖动效插件：效果参数参加设置导出、导入和同步。
+  static let lidDepthEnabled = "lidDepthEnabled"
+  static let lidDepthLive = "lidDepthLive"
+  static let lidDepthTimeout = "lidDepthTimeout"
+  static let lidDepthAngle = "lidDepthAngle"
+  static let lidDepthSpan = "lidDepthSpan"
+  static let lidDepthBlur = "lidDepthBlur"
+  static let lidDepthBlurSpread = "lidDepthBlurSpread"
+  static let lidDepthDim = "lidDepthDim"
+  static let lidDepthDimSpread = "lidDepthDimSpread"
+  static let lidDepthLean = "lidDepthLean"
+  static let lidDepthPerspective = "lidDepthPerspective"
+
   /// 访达右键（第十一族，2026-11-08，FinderLink）：扩展把动作交过来时带的凭证（App 第一次启动时生成，FinderLink.ensureKey；
   /// 扩展从 App 的偏好里读）。这台电脑自己的、**不注册默认值**：不跟着导出 / 导入、同步走
   nonisolated static let finderMenuKey = "finderMenuKey"
@@ -639,6 +652,7 @@ enum Prefs {
       islandHaptics: true,
       islandBlur: true,
     ].merging(Feature.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in current }
+      .merging(LidDepthOptions.defaults) { current, _ in current }
       .merging(FinderMenuItem.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in
         current
       }

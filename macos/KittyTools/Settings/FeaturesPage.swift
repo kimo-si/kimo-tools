@@ -3,7 +3,7 @@
 // 偏好）。通用页只留一行「功能 ›」写开着几个、关着哪几个（summary），0.8.0 的「新」标在那一行。
 // 下面一组「插件」（2026-11-12 拍板 A2）：每个插件一张卡（色块、名字、一句话、要的授权、后台做什么）+「添加」/「移除」，
 // 绑的还是那个功能开关的偏好。启动器里「添加…插件」那一行带过来时（SettingsNavigation.focusedPlugin）滚到那张卡、描一圈强调色。
-// 2026-11-13 起功能只剩核心五个，便签、提醒等七样也是插件卡片（拍板 P1）；插件自己的页最后一组是「移除」（PluginRemoveSection）。
+// 插件自己的页最后一组是「移除」（PluginRemoveSection）；合盖动效添加后也在功能列表里留一行设置入口。
 
 import SwiftUI
 
@@ -11,6 +11,7 @@ struct FeaturesPage: View {
   static let route = "page:features"
   @Environment(\.dismiss) private var dismiss
   @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
+  @AppStorage(Feature.lidDepth.prefsKey) private var lidDepthAdded = Feature.lidDepth.defaultOn
 
   var body: some View {
     VStack(spacing: 0) {
@@ -21,6 +22,7 @@ struct FeaturesPage: View {
         Form {
           Section {
             ForEach(Feature.listed, id: \.self) { FeatureToggle(feature: $0) }
+            if lidDepthAdded { lidDepthSettings }
           } footer: {
             SectionFootnote("关掉的功能不出现在快捷键、菜单栏和启动器里，也不在后台运行；它的数据和设置都留着，打开就回来。")
           }
@@ -53,6 +55,20 @@ struct FeaturesPage: View {
     }
     .navigationTitle("功能")
     .toolbar { SettingsBackButton { dismiss() } }
+  }
+
+  private var lidDepthSettings: some View {
+    LabeledContent {
+      Button("打开设置") { navigation?.page = .lidDepth }
+    } label: {
+      HStack(spacing: 10) {
+        KindTile(symbol: SettingsPage.lidDepth.symbol, color: SettingsPage.lidDepth.color, size: 24)
+        VStack(alignment: .leading) {
+          Text(SettingsPage.lidDepth.title)
+          Text(Feature.lidDepth.blurb).font(.subheadline).foregroundStyle(.secondary)
+        }
+      }
+    }
   }
 
   /// 通用页那一行的小字：开着的少就列开着的，关着的少就列关着的（纯函数，配单测）
@@ -163,6 +179,8 @@ struct PluginRemoveSection: View {
       "移除会隐藏设置页，已配置的文件关联由 macOS 保存。再次添加后可以继续编辑"
     case .appInput:
       "移除后停止自动切换输入法，已配置的应用规则会保留"
+    case .lidDepth:
+      "移除后停止检测合盖角度和抓取画面，效果设置会保留"
     default:
       "移除后菜单栏、主界面、启动器、快捷键里都没有它，设置和数据留着，再添加就回来"
     }

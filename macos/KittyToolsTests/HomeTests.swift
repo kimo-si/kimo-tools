@@ -28,7 +28,7 @@ struct HomeTests {
     #expect(
       sections.last?.tiles.map(\.target) == [
         .action(.noteCapture), .action(.noteNew), .action(.noteAll), .action(.reminderNew),
-        .action(.statusScreen), .action(.launchpad), .action(.island),
+        .action(.statusScreen), .action(.launchpad), .action(.island), .extra(.lidDepthPreview),
       ])
     #expect(tiles.first { $0.target == .action(.screenshot) }?.key == "⌥A")
     #expect(tiles.first { $0.target == .action(.clipboard) }?.key == nil)
@@ -126,9 +126,9 @@ struct HomeTests {
     var state = LauncherItem.ActionState()
     state.features = all
     let sections = Home.sections(state: state, keys: [:])
-    // 翻译 5 格、截图 OCR 单独一格；截图与录制和插件各 7 格。
-    #expect(Home.rows(sections).map(\.count) == [2, 5, 1, 5, 2, 5, 2])
-    #expect(Home.rows(sections).flatMap { $0 } == Array(0..<22))
+    // 翻译 5 格，截图 OCR 单独一格，截图与录制 7 格，插件 8 格。
+    #expect(Home.rows(sections).map(\.count) == [2, 5, 1, 5, 2, 5, 3])
+    #expect(Home.rows(sections).flatMap { $0 } == Array(0..<23))
     let rows: CGFloat = 7
     let expected =
       Home.top + Home.bottom + 4 * Home.titleHeight + rows * Home.tile.height

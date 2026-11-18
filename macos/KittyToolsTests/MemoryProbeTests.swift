@@ -801,6 +801,7 @@ private final class Probe {
         case .general: AnyView(GeneralTab())
         case .defaultApps: AnyView(DefaultAppsTab(appliesTextPresetOnOpen: false))
         case .appInput: AnyView(AppInputTab())
+        case .lidDepth: AnyView(EmptyView())
         case .island: AnyView(IslandTab())
         case .clipboard: AnyView(ClipboardTab(store: store))
         case .launcher: AnyView(EmptyView())

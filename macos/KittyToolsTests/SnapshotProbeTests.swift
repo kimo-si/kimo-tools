@@ -542,6 +542,8 @@ struct SnapshotProbeTests {
       case .finderMenu: AnyView(FinderMenuTab(extensionEnabled: false))
       case .defaultApps: AnyView(DefaultAppsTab(appliesTextPresetOnOpen: false))
       case .appInput: AnyView(AppInputTab(previewSources: []))
+      case .lidDepth:
+        AnyView(LidDepthTab(readStatus: { .init(sensorAvailable: true, angle: 105) }, refreshAccess: { true }, preview: {}))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .ocr:
@@ -4733,6 +4735,36 @@ struct SnapshotProbeTests {
     try snapshot(
       features(), size: NSSize(width: 600, height: 1000), dark: false,
       to: "\(out)/plugins-features-added.png")
+  }
+
+  /// 合盖动效：已添加的功能入口、可用的设置页、缺权限与缺硬件。
+  @Test(.enabled(if: directory != nil)) func lidDepth() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    let name = "kitty-snapshot-lid-depth-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: name))
+    defer { prefs.removePersistentDomain(forName: name) }
+    prefs.set(true, forKey: Feature.lidDepth.prefsKey)
+    let navigation = SettingsNavigation(defaults: nil)
+    try snapshot(
+      NavigationStack { FeaturesPage() }.environment(navigation).defaultAppStorage(prefs),
+      size: NSSize(width: 640, height: 1000), dark: false,
+      to: "\(out)/lid-depth-features.png")
+    try snapshot(
+      OnboardingView(center: HotKeyCenter()).defaultAppStorage(prefs),
+      size: OnboardingView.size, dark: false, to: "\(out)/lid-depth-onboarding.png")
+    for (name, available, granted, dark) in [
+      ("light", true, true, false), ("dark", true, true, true),
+      ("permission", true, false, false), ("unavailable", false, false, false),
+    ] {
+      try snapshot(
+        LidDepthTab(
+          readStatus: { .init(sensorAvailable: available, angle: available ? 105.7 : nil) },
+          refreshAccess: { granted }, preview: {}
+        ).defaultAppStorage(prefs),
+        size: NSSize(width: 490, height: available ? 1120 : 320), dark: dark,
+        to: "\(out)/lid-depth-\(name).png")
+    }
   }
 
   /// 设置 › 访达右键整页（「压缩时跳过」那一行的小字：填了一串、有一条写错了），推进去的「压缩时跳过」（空着、很多项带写错的，

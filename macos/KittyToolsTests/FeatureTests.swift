@@ -30,7 +30,7 @@ struct FeatureTests {
     for feature in Feature.allCases {
       #expect(
         HotKeyAction.allCases.contains { $0.feature == feature }
-          == ![.defaultApps, .dockPreview, .finderMenu, .appInput].contains(feature))
+          == ![.defaultApps, .dockPreview, .finderMenu, .appInput, .lidDepth].contains(feature))
       #expect(feature.page.rawValue == feature.rawValue)
     }
     #expect(HotKeyAction.screenshotTranslate.feature == .translate)
@@ -44,6 +44,24 @@ struct FeatureTests {
     #expect(MenuExtra.copyToTranslate.section?.feature == .translate)
     #expect(MenuExtra.pinsClose.section?.feature == .screenshot)
     #expect(MenuExtra.quit.section == nil)
+  }
+
+  // 无默认热键的合盖动效仍有主界面、菜单栏及启动器入口。
+  @Test func lidDepthPreviewFollowsPlugin() {
+    let extra = MenuExtra.lidDepthPreview
+    #expect(extra.feature == .lidDepth)
+    let installed = LauncherItem.ActionState(features: [.lidDepth])
+    let removed = LauncherItem.ActionState(features: [])
+    #expect(extra.isAvailable(installed) && !extra.isAvailable(removed))
+    #expect(Home.sections(state: installed, keys: [:]).last?.tiles.map(\.target) == [.extra(extra)])
+    #expect(
+      !Home.sections(state: removed, keys: [:]).flatMap(\.tiles).contains {
+        $0.target == .extra(extra)
+      })
+    #expect(LauncherItem.actions(installed).contains { $0.target == extra.rawValue })
+    #expect(!LauncherItem.actions(removed).contains { $0.target == extra.rawValue })
+    #expect(LauncherModel.pluginOffers(for: "Mac-Duo", added: []).map(\.title) == ["添加「合盖动效」插件"])
+    #expect(LauncherModel.pluginOffers(for: "Mac-Duo", added: [.lidDepth]).isEmpty)
   }
 
   /// 关掉的功能的动作不列、空了的节不列；两个功能合一节的只剩一个时节标题换成它的名字
@@ -210,7 +228,10 @@ struct FeatureTests {
   /// 新做的插件默认不添加（2026-11-12 拍板 A1）；2026-11-13 从功能转过来的插件照旧用原来的默认值、刘海岛默认添加着（P2：
   /// 没拨过开关的老用户升级上来便签、提醒、点刘海都还在，0.8.x 导出的文件里没有这一项也不会把它们关掉）
   @Test func switchesAreExportedSettings() {
-    #expect(Feature.allCases.filter { !$0.defaultOn } == [.dockPreview, .finderMenu, .appInput])
+    #expect(
+      Feature.allCases.filter { !$0.defaultOn } == [
+        .dockPreview, .finderMenu, .appInput, .lidDepth,
+      ])
     #expect(
       [Feature.notes, .reminders, .statusScreen, .launchpad, .defaultApps, .island].allSatisfy {
         $0.isPlugin && $0.defaultOn

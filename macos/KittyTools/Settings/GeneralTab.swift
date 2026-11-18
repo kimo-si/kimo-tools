@@ -266,7 +266,7 @@ extension PermissionRow {
 
   static func screenRecording(granted: Bool) -> PermissionRow {
     PermissionRow(
-      title: "屏幕录制", detail: "截图、截图翻译、识字、录屏、录系统声音、程序坞预览的缩略图；授权后可能要重新打开本 App 才生效",
+      title: "屏幕录制", detail: "截图、截图翻译、识字、录屏、录系统声音、程序坞预览、合盖动效；授权后可能要重新打开本 App 才生效",
       symbol: HotKeyAction.screenRecord.symbol, color: Style.Family.screenshot, granted: granted
     ) { Permissions.grant(.screenRecording) }
   }

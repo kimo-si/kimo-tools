@@ -79,7 +79,7 @@ enum Home {
     state: LauncherItem.ActionState, keys: [HotKeyAction: String], fresh: Set<HotKeyAction> = []
   ) -> [Section] {
     let extras = MenuExtra.allCases.filter {
-      $0.section != nil && $0.isAvailable(state) && $0.isOn(state) == nil
+      $0.isAvailable(state) && $0.isOn(state) == nil
     }
     var result: [Section] = []
     var plugins: [Tile] = []
@@ -106,6 +106,11 @@ enum Home {
       } else {
         result.append(Section(title: nil, tiles: tiles))
       }
+    }
+    plugins += extras.filter { $0.standaloneFeature?.isPlugin == true }.map { extra in
+      Tile(
+        target: .extra(extra), title: extra.title(), symbol: extra.symbol, color: extra.color,
+        key: nil)
     }
     if !plugins.isEmpty { result.append(Section(title: pluginsTitle, tiles: plugins)) }
     return result

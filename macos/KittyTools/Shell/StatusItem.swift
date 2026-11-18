@@ -358,6 +358,7 @@ enum MenuExtra: String, CaseIterable {
   case copyToTranslate
   case pinsToggle = "pins-toggle"
   case pinsClose = "pins-close"
+  case lidDepthPreview
   case settings, shortcuts, about, updates, quit
 
   /// 接在哪一节的末尾（那一节里有这个热键动作）；nil = 最后的设置那一节
@@ -366,7 +367,7 @@ enum MenuExtra: String, CaseIterable {
     case .pauseClipboard: .clipboard
     case .copyToTranslate: .selectionTranslate
     case .pinsToggle, .pinsClose: .screenshot
-    case .settings, .shortcuts, .about, .updates, .quit: nil
+    case .lidDepthPreview, .settings, .shortcuts, .about, .updates, .quit: nil
     }
   }
 
@@ -377,6 +378,7 @@ enum MenuExtra: String, CaseIterable {
     case .copyToTranslate: "复制即译"
     case .pinsToggle: pinsHidden ? "显示全部钉图" : "隐藏全部钉图"
     case .pinsClose: "关闭全部钉图"
+    case .lidDepthPreview: "预览合盖动效"
     case .settings: "设置…"
     case .shortcuts: "快捷键速查表"
     case .about: "关于 Kitty Tools"
@@ -392,6 +394,7 @@ enum MenuExtra: String, CaseIterable {
     case .copyToTranslate: "Copy to Translate"
     case .pinsToggle: "Show Hide Pins"
     case .pinsClose: "Close Pins"
+    case .lidDepthPreview: "Mac Duo Lid Effect Preview"
     case .settings: "Settings Preferences"
     case .shortcuts: "Keyboard Shortcuts"
     case .about: "About"
@@ -406,6 +409,7 @@ enum MenuExtra: String, CaseIterable {
     case .copyToTranslate: "doc.on.doc"
     case .pinsToggle: "pin"
     case .pinsClose: "pin.slash"
+    case .lidDepthPreview: SettingsPage.lidDepth.symbol
     case .settings: "gearshape"
     case .shortcuts: "keyboard"
     case .about: "info.circle"
@@ -415,11 +419,16 @@ enum MenuExtra: String, CaseIterable {
   }
 
   /// 家族色跟着所在那一节（暂停记录算剪贴板、复制即译算翻译、钉图算截图），最后一节是通用灰
-  var color: Color { section?.color ?? Style.Family.general }
+  var color: Color { section?.color ?? standaloneFeature?.page.color ?? Style.Family.general }
+
+  // 没有热键分节的插件动作，也使用插件的开关和样式。
+  var standaloneFeature: Feature? { self == .lidDepthPreview ? .lidDepth : nil }
+  var feature: Feature? { section?.feature ?? standaloneFeature }
 
   /// 这时候有没有这一项：钉图两项要有钉图，检查更新要正式版
   func isAvailable(_ state: LauncherItem.ActionState) -> Bool {
-    switch self {
+    guard feature.map(state.features.contains) ?? true else { return false }
+    return switch self {
     case .pinsToggle, .pinsClose: state.pinsHidden != nil
     case .updates: state.checksUpdates
     default: true

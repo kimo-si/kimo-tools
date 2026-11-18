@@ -26,12 +26,12 @@ struct OnboardingView: View {
 
   /// 第二屏要开的授权（纯函数，M6）：勾上的功能里有用得着的才列，顺序固定（辅助功能在前）。辅助功能管粘贴回原 App（剪贴板、
   /// 启动器）、划词、长截图自动滚动、录屏显示按键、状态屏拦键鼠、程序坞预览；屏幕录制管截图（截图翻译、识字也是）、录屏、
-  /// 程序坞预览的缩略图。便签、提醒、启动台用不着（提醒的「进入状态屏」到时候再问）
+  /// 程序坞预览的缩略图和合盖动效。便签、提醒、启动台用不着（提醒的「进入状态屏」到时候再问）
   static func permissions(for features: Set<Feature>) -> [Permissions.Kind] {
     let accessibility: Set<Feature> = [
       .clipboard, .launcher, .translate, .screenshot, .record, .statusScreen, .dockPreview,
     ]
-    let screenRecording: Set<Feature> = [.translate, .screenshot, .record, .dockPreview]
+    let screenRecording: Set<Feature> = [.translate, .screenshot, .record, .dockPreview, .lidDepth]
     return [
       features.isDisjoint(with: accessibility) ? nil : .accessibility,
       features.isDisjoint(with: screenRecording) ? nil : .screenRecording,
@@ -241,10 +241,11 @@ private struct RowCard<Item: Hashable, Row: View>: View {
 
 /// 第一屏：品牌图标 + 大标题 + 这台系统上有的全部功能和插件，两列，每格一个勾选框（名字、色块取设置页的，一句话是 Feature.blurb）。
 /// 2026-11-13 便签、提醒也成了插件（拍板 P5）：只列功能的话新装的人看不到它们，所以插件也列，分在下面一组、默认不勾，勾了就是添加。
-/// 插件那组是紧凑的三列（勾选框 + 色块 + 名字，一句话在悬停提示和读屏里）：带上说明的话这一屏放不下（引导的大小是固定的）
+/// 插件用紧凑网格（勾选框、色块、名字），超过九项时扩为四列，在固定高度里保持三行。
 private struct WelcomeScreen: View {
   var body: some View {
     let plugins = Feature.allCases.filter { $0.isPlugin && $0.isAvailable }
+    let columns = plugins.count > 9 ? 4 : 3
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     VStack(spacing: 0) {
       BrandIcon(size: 64)
@@ -258,10 +259,10 @@ private struct WelcomeScreen: View {
         Divider()
         Text("插件 · 用得上再勾，以后也能在 设置 › 通用 › 功能 里添加")
           .font(.subheadline).foregroundStyle(.secondary)
-        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
-          ForEach(Array(stride(from: 0, to: plugins.count, by: 3)), id: \.self) { start in
+        Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+          ForEach(Array(stride(from: 0, to: plugins.count, by: columns)), id: \.self) { start in
             GridRow {
-              ForEach(plugins[start..<min(start + 3, plugins.count)], id: \.self) {
+              ForEach(plugins[start..<min(start + columns, plugins.count)], id: \.self) {
                 FeatureChoice(feature: $0, compact: true)
               }
             }
@@ -306,11 +307,11 @@ private struct FeatureChoice: View {
   var body: some View {
     if compact {
       Toggle(isOn: $isOn) {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
           KindTile(symbol: feature.page.symbol, color: feature.page.color, size: 20)
             .opacity(isOn ? 1 : Style.disabledOpacity)
             .accessibilityHidden(true)
-          Text(feature.title).lineLimit(1)
+          Text(feature.title).font(.callout).lineLimit(1)
           Spacer(minLength: 0)
         }
         .contentShape(Rectangle())

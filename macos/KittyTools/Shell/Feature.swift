@@ -21,7 +21,7 @@ nonisolated enum Feature: String, CaseIterable {
   // 顺序 = 设置侧栏、通用页「功能」、菜单栏、快捷键页、速查表的顺序（2026-11-04 功能管理拍板 M3：便签、提醒、状态屏一组，
   // 启动台、程序坞预览一组）。rawValue 是偏好键，不能改
   case clipboard, launcher, translate, ocr, screenshot, record, notes, reminders, statusScreen
-  case launchpad, dockPreview, finderMenu, defaultApps, appInput
+  case launchpad, dockPreview, finderMenu, defaultApps, appInput, lidDepth
   // 2026-11-13 起便签之后这几个都是插件（isPlugin），刘海岛新加在最后（刘海岛那一节一直排在菜单栏、快捷键页最后）。
   // 保持唤醒（#3）推到 0.9.0 之后：在分支 plugins-wip 上
   case island
@@ -38,6 +38,7 @@ nonisolated enum Feature: String, CaseIterable {
     switch self {
     case .defaultApps: "按文件扩展名设置访达双击时打开的 App"
     case .appInput: "为所有应用设置默认输入法，也可为单个应用指定中英文模式"
+    case .lidDepth: "合上 MacBook 时，内建屏幕的画面随角度后倾、模糊并渐暗"
     case .clipboard: "记下复制过的文字、图片和文件，随时找回来粘贴"
     case .launcher: "一个搜索框：打开 App、文件和网页，顺手算算式"
     case .translate: "划词、输入、截图翻译，复制即译"
@@ -57,7 +58,7 @@ nonisolated enum Feature: String, CaseIterable {
   /// 插件（2026-11-12 起新的大模块；2026-11-13 起除了核心五个都是）
   static let plugins: Set<Feature> = [
     .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .defaultApps,
-    .appInput, .island,
+    .appInput, .lidDepth, .island,
   ]
   var isPlugin: Bool { Self.plugins.contains(self) }
 
@@ -72,6 +73,7 @@ nonisolated enum Feature: String, CaseIterable {
     case .finderMenu: ("要在系统设置里打开访达扩展", "只在你右键时动")
     case .defaultApps: ("更改文件关联时系统可能要求确认", "只在设置页读取和更改文件关联")
     case .appInput: ("切换输入法内部的中英文模式需要辅助功能权限", "切换应用时应用一次输入法规则")
+    case .lidDepth: ("屏幕录制", "读取兼容 MacBook 的合盖角度；合盖和预览时临时抓取内建屏幕画面")
     case .island:
       (
         "不要（打开「下一个日程」要「日历」，打开「音量和亮度」要「辅助功能」；正在播放读不到时，「音乐」「Spotify」的播放控制要「自动化」）",
@@ -92,6 +94,7 @@ nonisolated enum Feature: String, CaseIterable {
     case .finderMenu: ["访达右键", "右键菜单", "finder"]
     case .defaultApps: ["默认应用", "默认打开方式", "文件关联", "default apps", "file association"]
     case .appInput: ["应用输入法", "中英文切换", "搜狗拼音", "input method", "ime"]
+    case .lidDepth: ["合盖动效", "合盖", "屏幕倾斜", "Mac Duo", "Mac-Duo", "lid effect"]
     case .island: ["刘海岛", "刘海", "灵动岛", "island", "notch"]
     default: []
     }
@@ -104,7 +107,7 @@ nonisolated enum Feature: String, CaseIterable {
   /// 新做的插件默认不添加（拍板 A1：新装、升级都不添加）。2026-11-13 从功能转过来的插件照旧用原来的默认值（P2：导出文件、
   /// 同步里「没有这一项 = 默认值」，改了的话 0.8.x 的文件、电脑会把没拨过的便签悄悄关掉）；刘海岛也算开着——0.7.0 起就有
   /// 点刘海，升级上来照旧能用。新装照样一个插件都没添加：seedNewInstall 把核心以外的都明写成关
-  var defaultOn: Bool { ![.dockPreview, .finderMenu, .appInput].contains(self) }
+  var defaultOn: Bool { ![.dockPreview, .finderMenu, .appInput, .lidDepth].contains(self) }
 
   /// 新装默认开着的（功能管理拍板 M4；2026-11-17 加了 OCR，和翻译一样是新装就该能用的）
   static let core: Set<Feature> = [.clipboard, .launcher, .translate, .ocr, .screenshot]

@@ -235,7 +235,7 @@ struct LauncherBatch5Tests {
         "screenshotLastRegion", "ocr",
         "screenRecord", "audioRecord", "pinClipboard", "shotHistory", "clothesline", "noteCapture",
         "noteNew",
-        "noteAll", "reminderNew", "launchpad", "island", "home", "settings",
+        "noteAll", "reminderNew", "launchpad", "island", "home", "lidDepthPreview", "settings",
         "shortcuts",
         "about",
         "quit",

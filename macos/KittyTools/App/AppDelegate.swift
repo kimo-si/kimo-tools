@@ -219,9 +219,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     return board
   }()
+  private let appInput = AppInputController()
+  // 合盖插件运行时：只有添加后才读取角度，面板与宿主其他全屏操作互斥。
+  private lazy var lidDepth: LidDepthController = {
+    let controller = LidDepthController()
+    controller.hostIsBusy = { [unowned self] in
+      isCapturing || recorder != nil || statusScreen.isActive
+        || (Feature.launchpad.isOn && launchpad.isOpen)
+        || OverlayPanel.isSelectingRegion(in: NSApp.windows)
+    }
+    return controller
+  }()
+
   /// 程序坞预览（第九族，2026-10-22，PLAN §10「程序坞预览」）：鼠标停在程序坞的 App 图标上弹出它所有窗口的缩略图。
   /// 功能开关开着才起（默认关）；启动台开着、状态屏、截图框选时不弹。设置 › 程序坞预览。
-  private let appInput = AppInputController()
   private lazy var dockPreview: DockPreview = {
     let preview = DockPreview()
     preview.isSuppressed = { [unowned self] in
@@ -864,6 +875,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .finderMenu: AnyView(FinderMenuTab())
       case .defaultApps: AnyView(DefaultAppsTab())
       case .appInput: AnyView(AppInputTab())
+      case .lidDepth:
+        AnyView(
+          LidDepthTab(
+            readStatus: { [unowned self] in
+              .init(sensorAvailable: lidDepth.isSensorAvailable, angle: lidDepth.currentAngle)
+            },
+            refreshAccess: { [unowned self] in
+              lidDepth.checkScreenAccess()
+              return Permissions.isScreenRecordingAllowed
+            },
+            preview: { [unowned self] in previewLidDepth() }))
       case .translate:
         AnyView(
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)
@@ -1182,6 +1204,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let now = Feature.enabled
     // 输入法规则跟插件开关、设置导入和同步一起更新。
     appInput.configure(enabled: now.contains(.appInput))
+    // 运行时也读取导入和同步带来的参数变化。
+    if now.contains(.lidDepth) || appliedFeatures?.contains(.lidDepth) == true {
+      lidDepth.configure(enabled: now.contains(.lidDepth))
+    }
     let copyToTranslate = UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate)
     let before = appliedFeatures
     let placement = Prefs.ShotPlacement.current()
@@ -1487,6 +1513,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard isRunning else { return }
     // 停止监听前台 App 并取消尚未执行的输入法切换。
     appInput.configure(enabled: false)
+    // 退出前收起效果并结束屏幕流。
+    if appliedFeatures?.contains(.lidDepth) == true { lidDepth.stop() }
     FileMoves.forgetCut()  // 访达右键剪切的清单只在内存里：退出后扩展别再列「粘贴」
     statusScreen.exit(.quit)  // 在状态屏里被要求退出（远程、脚本）：拦截当场撤掉
     // 便签：applicationShouldTerminate 已经落过、落不下去也问过了；这里再落一次兜着之后才有的改动（等录屏收尾的那几秒）
@@ -1763,12 +1791,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 菜单栏里不对应全局热键的项：菜单栏、启动器、主界面（钉图两项、设置、退出）同一个分发
   private func run(_ extra: MenuExtra) {
     // 归关着的功能的那几项（暂停记录、复制即译、钉图）：同 run(action) 的兜底
-    if let feature = extra.section?.feature, !feature.isOn { return }
+    if let feature = extra.feature, !feature.isOn { return }
     switch extra {
     case .pauseClipboard: togglePauseRecording()
     case .copyToTranslate: toggleCopyToTranslate()
     case .pinsToggle: pins.toggleHidden()
     case .pinsClose: closeAllPins()
+    case .lidDepthPreview: previewLidDepth()
     case .settings: showSettings()
     case .shortcuts:
       showSettings()
@@ -1778,6 +1807,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 不确认，同菜单栏「退出」（第 9 批 M1：菜单栏图标隐藏时只剩启动器能退出）
     case .quit: NSApp.terminate(nil)
     }
+  }
+
+  // 主界面、菜单栏、启动器和设置使用同一个预览入口。
+  private func previewLidDepth() {
+    guard Feature.lidDepth.isOn else { return }
+    lidDepth.configure(enabled: true)
+    guard let blocker = lidDepth.runPreview() else { return }
+    let detail: String
+    switch blocker {
+    case .disabled: detail = "请在「合盖动效」设置中开启效果"
+    case .unavailable: detail = "需要内建屏幕和兼容的机盖角度传感器"
+    case .permission: detail = "请在「合盖动效」设置中授予屏幕录制权限"
+    case .busy: detail = "请结束当前的截图、录屏、全屏操作或预览后再试"
+    }
+    let actions: [Island.Action] =
+      blocker == .disabled || blocker == .permission
+      ? [.init("打开设置", opens: true) { [unowned self] in showSettings(page: .lidDepth) }] : []
+    island.show("无法预览合盖动效", detail: detail, symbol: SettingsPage.lidDepth.symbol, actions: actions)
   }
 
   /// 菜单栏和启动器内置动作此刻的状态：暂停记录了没有、复制即译开没开、钉图（nil = 没有）、能不能检查更新、在录屏还是录音

@@ -42,7 +42,8 @@ struct SettingsListTests {
       pages == [
         .general, .clipboard, .launcher, .translate, .ocr, .screenshot, .record,
         .notes, .reminders,
-        .statusScreen, .launchpad, .dockPreview, .finderMenu, .defaultApps, .appInput, .island,
+        .statusScreen, .launchpad, .dockPreview, .finderMenu, .defaultApps, .appInput, .lidDepth,
+        .island,
         .hotkeys,
         .about,
       ])
@@ -56,7 +57,7 @@ struct SettingsListTests {
           [.screenshot, .record],
           [
             .notes, .reminders, .statusScreen, .dockPreview, .finderMenu, .defaultApps, .appInput,
-            .island,
+            .lidDepth, .island,
           ],
           [.hotkeys, .about],
         ])
@@ -70,7 +71,7 @@ struct SettingsListTests {
         [.general], [.clipboard, .launcher, .ocr], [.screenshot],
         [
           .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .defaultApps,
-          .appInput, .island,
+          .appInput, .lidDepth, .island,
         ],
         [.hotkeys, .about], [.translate, .record],
       ])
@@ -336,6 +337,7 @@ struct SettingsListTests {
     #expect(OnboardingView.permissions(for: []).isEmpty)
     #expect(OnboardingView.permissions(for: [.statusScreen, .notes]) == [.accessibility])
     #expect(OnboardingView.permissions(for: [.clipboard]) == [.accessibility])
+    #expect(OnboardingView.permissions(for: [.lidDepth]) == [.screenRecording])
     #expect(
       OnboardingView.permissions(for: [.dockPreview]) == [.accessibility, .screenRecording])
   }

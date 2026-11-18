@@ -712,7 +712,9 @@ struct NotesWindowTests {
     #expect(
       targets[start - 1] == "clothesline" && targets[start + 3] == "reminderNew"
         && targets[start + 4] == "launchpad" && targets[start + 5] == "island"
-        && targets[start + 6] == "home" && targets[start + 7] == "settings")
+        && targets[start + 6] == "home"
+        && targets[start + 7] == MenuExtra.lidDepthPreview.rawValue
+        && targets[start + 8] == "settings")
     #expect(launcher[start..<start + 3].map(\.title) == ["快速记一条", "新建便签", "全部便签"])
     for item in launcher[start..<start + 3] {
       #expect(item.symbol == item.hotKeyAction?.symbol, "\(item.title)")
@@ -750,7 +752,9 @@ struct NotesWindowTests {
     #expect(SettingsPage.notes.title == "便签" && SettingsPage.notes.color == Style.Family.notes)
     #expect(SettingsPage.page(for: "便签", current: .general) == .notes)
     #expect(SettingsPage.page(for: "最近删除", current: .general) == .notes)
-    #expect(SettingsPage.notes.matches("字号") && SettingsPage.hotkeys.matches("快速记一条"))
+    #expect(SettingsPage.notes.matches("字号"))
+    // 快捷键搜索随本机的插件开关变化，测试也不写宿主的偏好。
+    #expect(SettingsPage.hotkeys.matches("快速记一条") == HotKeyAction.noteCapture.isActive)
 
     var archive = SettingsArchive(version: "0.5.0", exportedAt: Self.t0)
     let combo = HotKey(keyCode: kVK_ANSI_J, modifiers: optionKey | controlKey)
