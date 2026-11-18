@@ -674,15 +674,7 @@ struct SnapshotProbeTests {
         to: "\(out)/settings-general-permissions\(dark ? "-dark" : "").png")
     }
     try renderTransfer(out)
-    // 菜单栏上的两种图标（浅色 / 深色菜单栏各一张，右边放大 5 倍）；彩色图的 @2x 位图另存原图
-    for dark in [false, true] {
-      try snapshot(
-        StatusIconProbe(), size: NSSize(width: 260, height: 124), dark: dark,
-        to: "\(out)/status-icons\(dark ? "-dark" : "").png")
-    }
-    let colorRep = try #require(StatusItem.colorIcon.representations.last as? NSBitmapImageRep)
-    try #require(colorRep.representation(using: .png, properties: [:]))
-      .write(to: URL(filePath: "\(out)/status-icon-color@2x.png"))
+    try renderStatusIcons(out)
     // 最小窗口（contentMinSize 700 × 460）下的通用页：外观缩略图、强调色两排放得下
     navigation.page = .general
     try snapshot(
@@ -4648,6 +4640,25 @@ struct SnapshotProbeTests {
         AnyView(EmptyView())
       },
       size: NSSize(width: 780, height: 1120), dark: false, to: "\(out)/launchpad-settings.png")
+  }
+
+  /// 屏外检查菜单栏单色和彩色图标的实际尺寸和深浅色对比。
+  @Test(.enabled(if: directory != nil)) func statusIcons() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    try renderStatusIcons(out)
+  }
+
+  /// 生成浅色和深色菜单栏预览，同时保存彩色版的 @2x 位图。
+  private func renderStatusIcons(_ out: String) throws {
+    for dark in [false, true] {
+      try snapshot(
+        StatusIconProbe(), size: NSSize(width: 260, height: 124), dark: dark,
+        to: "\(out)/status-icons\(dark ? "-dark" : "").png")
+    }
+    let colorRep = try #require(StatusItem.colorIcon.representations.last as? NSBitmapImageRep)
+    try #require(colorRep.representation(using: .png, properties: [:]))
+      .write(to: URL(filePath: "\(out)/status-icon-color@2x.png"))
   }
 
   /// 屏外验证首次引导的三个步骤和第一屏底部，偏好只写入临时域。

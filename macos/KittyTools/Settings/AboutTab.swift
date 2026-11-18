@@ -201,7 +201,7 @@ struct BrandIcon: View {
     Button {
       if !reduceMotion { taps += 1 }
     } label: {
-      Image(nsImage: NSApp.applicationIconImage)
+      Image(nsImage: AppBrand.icon)
         .resizable()
         .interpolation(.high)
         .frame(width: size, height: size)

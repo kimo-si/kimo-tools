@@ -19,10 +19,11 @@ struct StatusItemTests {
     #expect(StatusItem.IconStyle.allCases.map(\.title) == ["单色", "彩色"])
   }
 
-  /// 单色是模板图（跟着菜单栏反色）；彩色不是模板、16 pt 正方形、@1x / @2x 两张位图；读屏名都是 Kitty Tools
+  /// 单色模板和彩色图都有原有的点数、缩放行为和读屏名称。
   @Test func styleImages() throws {
     let template = try #require(StatusItem.IconStyle.template.image)
     #expect(template.isTemplate && template.accessibilityDescription == "kimo-tools")
+    #expect(template.size == NSSize(width: 22, height: 16))
     let color = try #require(StatusItem.IconStyle.color.image)
     #expect(!color.isTemplate && color.accessibilityDescription == "kimo-tools")
     #expect(color.size == NSSize(width: 16, height: 16))
@@ -31,7 +32,7 @@ struct StatusItemTests {
     #expect(StatusItem.IconStyle.color.image === color)
   }
 
-  /// 彩色取的是大图，不是 16 / 32 px 那两张手调简化版：假图标 32 px 红、1024 px 绿，出来是绿的
+  /// 彩色从最大表示缩放，32 px 的小表示不会覆盖 1024 px 源图。
   @Test func colorIconUsesLargeRepresentation() throws {
     let icon = NSImage(size: NSSize(width: 32, height: 32))
     icon.addRepresentation(Self.solid(.red, pixels: 32))
@@ -42,8 +43,7 @@ struct StatusItemTests {
     #expect(center.greenComponent > 0.9 && center.redComponent < 0.1)
   }
 
-  /// 真的 App 图标：只取圆角方块主体——四角透明（画布留白没带进来），一圈边上没有烘焙阴影的黑；
-  /// 左边中间是粉底，下半中间是奶油色卡片，上半中间是黑猫
+  /// 彩色版保留原图的透明圆角、蓝紫渐变、浅色格子和右下加号。
   @Test func colorIconIsTheWholeAppIcon() throws {
     let rep = try #require(StatusItem.colorIcon.representations.last as? NSBitmapImageRep)
     #expect(rep.pixelsWide == 32 && rep.pixelsHigh == 32)
@@ -51,18 +51,14 @@ struct StatusItemTests {
     for (x, y) in [(0, 0), (31, 0), (0, 31), (31, 31)] {
       #expect((pixel(x, y)?.alphaComponent ?? 1) < 0.05, "角 \(x),\(y)")
     }
-    for index in 0..<32 {
-      for (x, y) in [(index, 0), (index, 31), (0, index), (31, index)] {
-        guard let color = pixel(x, y), color.alphaComponent > 0.1 else { continue }
-        #expect(color.redComponent > 0.55, "边 \(x),\(y)")
-      }
-    }
-    let pink = try #require(pixel(1, 14))
-    #expect(pink.redComponent > 0.85 && pink.greenComponent < 0.6 && pink.blueComponent < 0.7)
-    let cream = try #require(pixel(16, 27))
-    #expect(cream.redComponent > 0.9 && cream.greenComponent > 0.85 && cream.blueComponent > 0.8)
-    let cat = try #require(pixel(16, 11))
-    #expect(cat.redComponent < 0.35 && cat.greenComponent < 0.3)
+    let blue = try #require(pixel(13, 1))
+    #expect(blue.alphaComponent > 0.9 && blue.blueComponent > 0.8 && blue.redComponent < 0.4)
+    let violet = try #require(pixel(28, 26))
+    #expect(violet.alphaComponent > 0.9 && violet.blueComponent > 0.8 && violet.redComponent > 0.45)
+    let tile = try #require(pixel(10, 10))
+    #expect(tile.redComponent > 0.8 && tile.greenComponent > 0.8 && tile.blueComponent > 0.85)
+    let plus = try #require(pixel(20, 21))
+    #expect(plus.redComponent > 0.8 && plus.greenComponent > 0.8 && plus.blueComponent > 0.85)
   }
 
   /// 什么时候弹菜单（U12①）：当前事件是鼠标事件时——右键、左键点并带 ⌃；读屏「按下」、键盘导航（当前事件是按键，

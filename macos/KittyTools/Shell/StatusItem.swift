@@ -11,7 +11,7 @@
 // 菜单每次打开前重建（快捷键、钉图状态会变），用 sectionHeader 分 剪贴板与启动器 / 翻译 / 截图与录制 三节（N15，AppDelegate 按
 // HotKeyAction.sections 填，和快捷键页同名同序），菜单项左侧是家族色符号，没设快捷键的右边留空。
 // 不对应全局热键的项（暂停记录、复制即译、钉图、设置、关于、检查更新、退出）是 MenuExtra，启动器的内置动作读同一份。
-// 图标默认是角色「探头」的剪影（资源 StatusIcon，22 × 16 pt 模板图，由 macos/brand-icons.swift 生成）；设置 › 通用可换成
+// 图标默认是四格加号的单色模板（资源 StatusIcon，22 × 16 pt，由 macos/brand-icons.swift 生成）；设置 › 通用可换成
 // 彩色（完整的 App 图标）或隐藏（第 9 批 M1 M2），偏好一变立刻跟着变。隐藏只是 isVisible = false，动效照常调、看不见而已；
 // 隐藏后靠再打开一次本 App 回到主界面（AppDelegate.applicationShouldHandleReopen，设置从那里一键过去），退出在启动器里（MenuExtra.quit）。
 // 有新版本时图标右上角一个强调色小圆点（updateVersion，2026-10-06）：常驻到更新为止，点开菜单最上面就是「更新到 x…」。
@@ -39,7 +39,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
     didSet { if updateVersion != oldValue { applyBadge() } }
   }
 
-  /// 图标样式（设置 › 通用「图标样式」）：单色 = 角色剪影模板图（跟着菜单栏深浅反色）；彩色 = 完整的 App 图标
+  /// 图标样式（设置 › 通用「图标样式」）：单色 = 四格加号模板图（跟着菜单栏深浅反色）；彩色 = 完整的 App 图标
   /// （不反色，菜单打开时的高亮上也保持原色）
   enum IconStyle: String, CaseIterable, Identifiable {
     case template, color
@@ -64,7 +64,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
 
   /// 只画一次（设置页每次重画都要读它）
   static let colorIcon: NSImage = {
-    let image = menuBarImage(from: NSApp.applicationIconImage)
+    let image = menuBarImage(from: AppBrand.icon)
     image.accessibilityDescription = AppBrand.name
     return image
   }()
@@ -136,10 +136,8 @@ final class StatusItem: NSObject, NSMenuDelegate {
     return NSRect(x: x, y: flipped ? top : bottom, width: side, height: side)
   }
 
-  /// 彩色图标 = 完整的 App 图标（程序坞、访达里那张）。不交给 NSImage 按菜单栏尺寸自己挑表示：16 pt 会挑到 16 / 32 px
-  /// 那两张手调简化版（Whisker §6）。取 1024 px 的大图，裁掉画布四周各 100 的留白、只留 824 的圆角方块主体，先在原分辨率上
-  /// 按主体外形（超椭圆，同 brand-icons.swift）去掉底角那点烘焙阴影（缩小后再裁的话边缘像素会混进阴影的黑），
-  /// 再高质量插值预先画成 @1x / @2x 两张位图。16 pt 高，和单色剪影的视觉高度一样；按钮仍是 squareLength，换样式宽度不跳
+  /// 彩色版从 1024 px 的 App 图标裁出原标识，保留它的透明圆角并渲染 @1x / @2x。
+  /// 缩放前去掉 brand-icons.swift 留的外部透明区，让 16 pt 的图标在菜单栏里保持清晰。
   static func menuBarImage(from icon: NSImage, points: Int = 16) -> NSImage {
     let image = NSImage(size: NSSize(width: points, height: points))
     var proposed = CGRect(x: 0, y: 0, width: 1024, height: 1024)
@@ -150,14 +148,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
     let side = Int((824 * unit).rounded())
     guard
       let body = source.cropping(
-        to: CGRect(x: 100 * unit, y: 100 * unit, width: 824 * unit, height: 824 * unit)),
-      let shaped = bitmap(
-        side: side,
-        { context in
-          context.addPath(squircle(side: CGFloat(side)))
-          context.clip()
-          context.draw(body, in: CGRect(x: 0, y: 0, width: side, height: side))
-        })
+        to: CGRect(x: 100 * unit, y: 100 * unit, width: 824 * unit, height: 824 * unit))
     else { return image }
     for scale in 1...2 {
       let pixels = points * scale
@@ -166,7 +157,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
           side: pixels,
           { context in
             context.interpolationQuality = .high
-            context.draw(shaped, in: CGRect(x: 0, y: 0, width: pixels, height: pixels))
+            context.draw(body, in: CGRect(x: 0, y: 0, width: pixels, height: pixels))
           })
       else { continue }
       let rep = NSBitmapImageRep(cgImage: small)
@@ -185,21 +176,6 @@ final class StatusItem: NSObject, NSMenuDelegate {
     else { return nil }
     draw(context)
     return context.makeImage()
-  }
-
-  /// App 图标主体的外形：超椭圆 |x|⁵ + |y|⁵ = 1（macOS 图标的连续圆角，同 brand-icons.swift 的 squircle）
-  private static func squircle(side: CGFloat) -> CGPath {
-    let path = CGMutablePath()
-    let radius = side / 2
-    for step in 0..<256 {
-      let angle = CGFloat(step) / 256 * 2 * .pi
-      let point = CGPoint(
-        x: radius + radius * copysign(pow(abs(cos(angle)), 0.4), cos(angle)),
-        y: radius + radius * copysign(pow(abs(sin(angle)), 0.4), sin(angle)))
-      if step == 0 { path.move(to: point) } else { path.addLine(to: point) }
-    }
-    path.closeSubpath()
-    return path
   }
 
   func menuNeedsUpdate(_ menu: NSMenu) {

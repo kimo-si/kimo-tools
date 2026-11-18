@@ -292,7 +292,7 @@ windows/                 # Windows 原生版（C# + WinUI 3，开发中）
 
 ## 致谢
 
-- 感谢原作者 **YyAdnBug** 和上游贡献者。kimo-tools 基于原项目的 macOS 原生版二次开发，沿用了上游的应用结构、功能实现和图标设计。[原项目 Kitty Tools](https://github.com/YyAdnBug/kitty-tools)
+- 感谢原作者 **YyAdnBug** 和上游贡献者。kimo-tools 基于原项目的 macOS 原生版二次开发，沿用了上游的应用结构和功能实现。[原项目 Kitty Tools](https://github.com/YyAdnBug/kitty-tools)
 - 便签的交互和数值参考了 [Noty](https://github.com/aimen08/noty)（MIT），代码全部自己重写
 - 状态屏的动画表情来自 [Microsoft Fluent Emoji Animated](https://github.com/microsoft/fluentui-emoji-animated)（MIT）
 - 合盖动效改编自 [Mac Duo](https://github.com/sumimakito/Mac-Duo)（Apache 2.0），[署名与许可](macos/KittyTools/Resources/mac-duo-LICENSE.txt)随应用提供

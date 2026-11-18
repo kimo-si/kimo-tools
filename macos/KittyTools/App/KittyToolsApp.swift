@@ -19,6 +19,18 @@ nonisolated enum AppBrand {
   static let repository =
     Bundle.main.object(forInfoDictionaryKey: "KittyUpdateRepository") as? String
     ?? "kimo-si/kimo-tools"
+
+  /// 从当前安装包直接加载图标，避免覆盖安装时继续读到系统缓存的旧版。
+  @MainActor static let icon: NSImage = {
+    if let filename = Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String,
+      let url = Bundle.main.url(
+        forResource: (filename as NSString).deletingPathExtension, withExtension: "icns"),
+      let image = NSImage(contentsOf: url)
+    {
+      return image
+    }
+    return NSApplication.shared.applicationIconImage
+  }()
 }
 
 @main
