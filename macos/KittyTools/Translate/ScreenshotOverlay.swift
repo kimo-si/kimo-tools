@@ -41,6 +41,11 @@ nonisolated enum ScreenshotOverlay {
     var isAnalyzed = false
     /// 同一容器中，多行正文上方、左边对齐的单行标题。
     var isHeading = false
+    /// 账号时间行仍占布局位置，保留原图字形。
+    var preservesSource = false
+
+    /// 只把需要翻译的文字交给服务，空串保留原来的段落下标。
+    var translationSource: String { preservesSource ? "" : text }
 
     var isControl: Bool {
       guard let container else { return false }
@@ -153,14 +158,16 @@ nonisolated enum ScreenshotOverlay {
 
   // MARK: 分段
 
+  /// OCR 归一化行框转成合成画布上的像素框。
+  private static func pixelBox(_ box: CGRect, in size: CGSize) -> CGRect {
+    CGRect(
+      x: box.minX * size.width, y: box.minY * size.height,
+      width: box.width * size.width, height: box.height * size.height)
+  }
+
   /// OCR 的行 → 按段分好的块（切段规则同 OCR.paragraphs）。纯函数，配单测
   static func segments(of lines: [OCR.Line], imageSize: CGSize) -> [Segment] {
     guard imageSize.width > 0, imageSize.height > 0 else { return [] }
-    func pixels(_ box: CGRect) -> CGRect {
-      CGRect(
-        x: box.minX * imageSize.width, y: box.minY * imageSize.height,
-        width: box.width * imageSize.width, height: box.height * imageSize.height)
-    }
     return OCR.groups(lines).compactMap { group in
       let text = OCR.joinLine(group.map(\.text))
       guard !text.isEmpty else { return nil }
@@ -178,12 +185,15 @@ nonisolated enum ScreenshotOverlay {
         if measured > 0, measured < 4 * lineHeight { inset = measured }
       }
       return Segment(
-        box: pixels(box), text: text, lineHeight: lineHeight, lineCount: group.count, inset: inset,
-        words: group.flatMap(\.words).map { OCR.Word(text: $0.text, box: pixels($0.box)) })
+        box: pixelBox(box, in: imageSize), text: text, lineHeight: lineHeight,
+        lineCount: group.count, inset: inset,
+        words: group.flatMap(\.words).map {
+          OCR.Word(text: $0.text, box: pixelBox($0.box, in: imageSize))
+        })
     }
   }
 
-  /// 翻译前先区分容器与字色，再接段：标签不能混进正文，白色标题不能吞掉灰色正文。
+  /// 翻译前先区分账号时间行、容器与字色，再接段。
   /// 只读图像，放在后台做；识别与翻译仍使用同一份 Segment，不改原文或让服务猜布局。
   @concurrent static func prepareSegments(of lines: [OCR.Line], in image: CGImage) async
     -> [Segment]
@@ -197,41 +207,105 @@ nonisolated enum ScreenshotOverlay {
       data: data.assumingMemoryBound(to: UInt8.self), width: context.width,
       height: context.height, bytesPerRow: context.bytesPerRow
     ).snapshot()
-    var detector = ScreenshotRegions(width: image.width, height: image.height)
+    return positionedSegments(lines, in: original, size: size)
+  }
+
+  /// 一组连续的行共享保留状态与容器。闭合容器内字色明显不同的行也分开。
+  private struct LineStyle {
+    var preservesSource = false
+    var container: CGRect?
+    var ink: RGB?
+
+    /// 判定是否应在前一行与当前行之间强制断段。
+    func startsRun(after previous: LineStyle) -> Bool {
+      if preservesSource != previous.preservesSource || container != previous.container {
+        return true
+      }
+      guard container != nil, let ink, let old = previous.ink else { return false }
+      return ink.distance(to: old) > 0.18
+    }
+  }
+
+  /// 按图像区域和账号行的边界分组，再在每组内沿用原来的 OCR 段落规则。
+  private static func positionedSegments(_ lines: [OCR.Line], in original: Snapshot, size: CGSize)
+    -> [Segment]
+  {
+    let headers = postHeaderLines(lines, size: size)
+    var detector = ScreenshotRegions(width: Int(size.width), height: Int(size.height))
     var result: [Segment] = []
     var run: [OCR.Line] = []
-    var previousContainer: CGRect?
-    var previousInk: RGB?
-    func flush() {
-      for var segment in segments(of: run, imageSize: size) {
-        segment = measure(segment, in: original)
-        segment.container = previousContainer
-        segment.isAnalyzed = true
-        result.append(segment)
-      }
-      run.removeAll(keepingCapacity: true)
-    }
-    for line in lines {
-      guard let single = segments(of: [line], imageSize: size).first else { continue }
-      let background = original.background(of: single.box, erasing: single.box)
-      let container = detector.container(
-        around: single.box, lineHeight: single.lineHeight, background: background,
-        color: original.color)
-      let ink = original.foreground(in: single.box, background: background)
-      let changedInk =
-        previousInk.flatMap { old in ink.map { old.distance(to: $0) > 0.18 } } ?? false
-      if !run.isEmpty, previousContainer != container || (container != nil && changedInk) {
-        flush()
+    var previous = LineStyle()
+    for (index, line) in lines.enumerated() where !line.text.isEmpty {
+      let style =
+        headers.contains(index)
+        ? LineStyle(preservesSource: true)
+        : lineStyle(pixelBox(line.box, in: size), in: original, detector: &detector)
+      if !run.isEmpty, style.startsRun(after: previous) {
+        // 在合并行框前切开账号或容器，避免正文的段框吞掉同一行的昵称。
+        result += analyzedSegments(run, style: previous, in: original, size: size)
+        run.removeAll(keepingCapacity: true)
       }
       run.append(line)
-      previousContainer = container
-      previousInk = ink
+      previous = style
     }
-    flush()
+    result += analyzedSegments(run, style: previous, in: original, size: size)
     markHeadings(&result)
     return result
   }
 
+  /// 在接段之前采样单行的闭合容器和字色。
+  private static func lineStyle(
+    _ box: CGRect, in original: Snapshot, detector: inout ScreenshotRegions
+  ) -> LineStyle {
+    let background = original.background(of: box, erasing: box)
+    let container = detector.container(
+      around: box, lineHeight: box.height, background: background, color: original.color)
+    return LineStyle(
+      container: container, ink: original.foreground(in: box, background: background))
+  }
+
+  /// 给每段附上已识别的边界。保留原样的段只需要原文框参与避让。
+  private static func analyzedSegments(
+    _ lines: [OCR.Line], style: LineStyle, in original: Snapshot, size: CGSize
+  ) -> [Segment] {
+    segments(of: lines, imageSize: size).map {
+      var segment = style.preservesSource ? $0 : measure($0, in: original)
+      segment.container = style.container
+      segment.isAnalyzed = true
+      segment.preservesSource = style.preservesSource
+      return segment
+    }
+  }
+
+  /// 只保护带「@账号 · 相对时间」的独立行。OCR 有时把同一行左边的昵称另给一个框。
+  private static func postHeaderLines(_ lines: [OCR.Line], size: CGSize) -> Set<Int> {
+    let pattern = /(?:.{1,50}\s+)?@[A-Za-z0-9_]+\s*[·•⋅・]\s*\d+\s*(?:[smhdw]|秒|分钟|小时|天|周)(?:前)?/
+    var headers = Set<Int>()
+    for (index, line) in lines.enumerated() where line.text.wholeMatch(of: pattern) != nil {
+      headers.insert(index)
+      if index > 0, line.text.hasPrefix("@"),
+        isAdjacentName(lines[index - 1], leftOf: line, size: size)
+      {
+        headers.insert(index - 1)
+      }
+    }
+    return headers
+  }
+
+  /// 用像素单位比较横向间距，避免把上方的正文或离得远的另一列当成昵称。
+  private static func isAdjacentName(_ name: OCR.Line, leftOf account: OCR.Line, size: CGSize)
+    -> Bool
+  {
+    let left = pixelBox(name.box, in: size)
+    let right = pixelBox(account.box, in: size)
+    let overlap = min(left.maxY, right.maxY) - max(left.minY, right.minY)
+    let gap = right.minX - left.maxX
+    let height = max(left.height, right.height)
+    return name.text.count <= 50 && overlap >= 0.5 * min(left.height, right.height)
+      && (-0.5 * height...2.5 * height).contains(gap)
+  }
+
+  /// 同一容器内靠左、位于多行正文上方的单行按标题排版。
   private static func markHeadings(_ segments: inout [Segment]) {
     for index in segments.indices {
       let segment = segments[index]
@@ -271,7 +345,7 @@ nonisolated enum ScreenshotOverlay {
     var spans: [Span] = []
     var leftovers: [Int] = []
     for (index, segment) in segments.enumerated() {
-      guard index < translations.count else { continue }
+      guard index < translations.count, !segment.preservesSource else { continue }
       let (marker, translated) = listItem(
         translations[index].trimmingCharacters(in: .whitespacesAndNewlines), source: segment.text)
       // 代码词换回原文的写法（服务常把句首的 `total_…` 改成 `Total_…`）

@@ -8,6 +8,64 @@ import Testing
 @testable import KittyTools
 
 struct ScreenshotReadingTests {
+  /// 还原帖子行框：昵称和账号可能是一整行，也可能是两个同高的识别块。
+  @Test(arguments: [false, true])
+  func postBodyDoesNotJoinAccountHeader(splitHeader: Bool) async throws {
+    let size = CGSize(width: 1186, height: 309)
+    let image = try #require(postBackground(size))
+    let segments = await ScreenshotOverlay.prepareSegments(
+      of: postLines(splitHeader: splitHeader), in: image)
+    let body = segments.map(\.translationSource).filter { !$0.isEmpty }
+    #expect(body.count == 2)
+    #expect(body.allSatisfy { !$0.contains("@alex_dev") })
+    let translations = segments.map { segment in
+      if segment.text.contains("first report") { return "团队分享了关于两款芯片优化的初步结果。" }
+      if segment.text.contains("feedback") { return "我们收到了反馈，正在改进沟通风格。" }
+      return "账号译文"
+    }
+    let result = ScreenshotOverlay.layout(
+      segments: segments, translations: translations, imageSize: size, pixelsPerPoint: 2)
+    #expect(result.leftovers.isEmpty)
+    #expect(
+      result.spans.map(\.text) == ["团队分享了关于两款芯片优化的初步结果。", "我们收到了反馈，正在改进沟通风格。"])
+    let upper = try #require(result.spans.first)
+    #expect(upper.area.maxY < 250)
+  }
+
+  /// 深色社交页面的背景。回归依赖 OCR 的位置关系，与字色或网络翻译服务无关。
+  private func postBackground(_ size: CGSize) -> CGImage? {
+    guard
+      let context = CGContext(
+        data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8,
+        bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    else { return nil }
+    context.setFillColor(CGColor(gray: 0.04, alpha: 1))
+    context.fill(CGRect(origin: .zero, size: size))
+    return context.makeImage()
+  }
+
+  /// 用实际问题截图的行框模拟两种 OCR 输出，账号后的第一段有两行。
+  private func postLines(splitHeader: Bool) -> [OCR.Line] {
+    let name = CGRect(x: 0.105, y: 0.845, width: 0.067, height: 0.09)
+    let account = CGRect(x: 0.200, y: 0.838, width: 0.193, height: 0.106)
+    let header: [OCR.Line] =
+      splitHeader
+      ? [.init(text: "Alex", box: name), .init(text: "@alex_dev • 3h", box: account)]
+      : [.init(text: "Alex @alex_dev · 3h", box: name.union(account))]
+    return header + [
+      .init(
+        text: "Here is our first report about the recent improvements. The team shared some",
+        box: CGRect(x: 0.105, y: 0.684, width: 0.828, height: 0.110)),
+      .init(
+        text: "results on hardware and software optimizations.",
+        box: CGRect(x: 0.103, y: 0.561, width: 0.570, height: 0.103)),
+      .init(
+        text: "I do get the feedback on its communication style and we're working on that.",
+        box: CGRect(x: 0.103, y: 0.290, width: 0.877, height: 0.128)),
+    ]
+  }
+
   /// 空间足够时允许译文多一行，不能为迁就原文行数先缩字。
   @Test func chineseParagraphKeepsReadableSizeAndParagraphAnchors() throws {
     var first = ScreenshotOverlay.Segment(

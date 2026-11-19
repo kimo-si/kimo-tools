@@ -3276,8 +3276,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   ) async throws -> ScreenshotTranslation.Batch {
     let started = ContinuousClock.now
     defer { trace.record(.api, since: started) }
-    let requests = segments.map { TranslateRequest(text: $0.text, from: plan.from, to: plan.to) }
-    let count = segments.filter { ScreenshotOverlay.hasTranslatableContent($0.text) }.count
+    // 账号行仍用空请求占着原下标，和纯符号一样不会发到翻译服务。
+    let sources = segments.map(\.translationSource)
+    let requests = sources.map { TranslateRequest(text: $0, from: plan.from, to: plan.to) }
+    let count = sources.count(where: ScreenshotOverlay.hasTranslatableContent)
     let showsProgress = count > ScreenshotTranslation.concurrency
     if showsProgress {
       island.show(Self.overlayTitle, detail: "0/\(count)", tone: .progress, symbol: "translate")
@@ -3302,7 +3304,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       UserDefaults.standard.bool(forKey: Prefs.translateHistoryEnabled)
     else { return }
     coordinator.history.add(
-      source: source, target: target, result: batch.translations.joined(separator: "\n\n"),
+      source: source, target: target,
+      result: batch.translations.filter { !$0.isEmpty }.joined(separator: "\n\n"),
       service: service.name,
       limit: UserDefaults.standard.integer(forKey: Prefs.translateHistoryLimit))
   }
